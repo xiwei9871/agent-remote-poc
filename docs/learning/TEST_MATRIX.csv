@@ -1,0 +1,33 @@
+G1-01,install,agentmemory 0.9.32 隔离安装+daemon,PASS,ACTUAL_RUN,REST 3111/viewer 3113/engine 49134; secret 鉴权
+G1-02,install,connect devin --with-hooks 隔离写入,PASS,ACTUAL_RUN,合并保留既有键; 自动备份
+G1-03,feature,SessionStart 注入项目 lesson,PASS,ACTUAL_RUN,AGENTMEMORY_INJECT_CONTEXT=true 必需(文档未强调)
+G1-04,feature,项目隔离(proj-b 无泄漏),PASS,ACTUAL_RUN,git common-dir 分区
+G1-05,feature,guard 模拟事件阻断,PASS,ACTUAL_RUN,E01/E03/E05 decision:block; benign 静默; audit 落证
+G2-01,real-session,真实新会话 hooks 自动加载,PASS,ACTUAL_RUN,loaded=10 devin=10(ACP buttery-marigold)
+G2-02,real-session,MCP 自动连接,PASS,ACTUAL_RUN,agentmemory connected
+G2-03,real-session,lesson 影响真实决策,PASS,ACTUAL_RUN,agent 引 lesson 弃 pkill 选 pgrep
+G2-04,real-session,T02 真实纠错→持久化,BLOCKED_AUTH,-,需 devin auth login
+G2-05,real-session,T03 双会话复现不犯,PASS_PARTIAL,ACTUAL_RUN,lesson 注入已证; 标准链路待 auth
+G2-06,real-session,T04 新项全局不泄A,BLOCKED_AUTH,-,隔离已证; 真实新项待 auth
+G2-07,revoke,T05 撤销后不再注入,PASS,ACTUAL_RUN,lessons/delete→注入消失
+G2-08,desktop,Desktop 会话加载同机制,NOT_TESTED,-,需用户开 Desktop 新会话
+G2-09,cloud,云端自动配置,UNSUPPORTED,-,本地 daemon 不可达; 需部署+Secrets 另行批准
+G2-10,auth,devin -p 交互会话,BLOCKED_AUTH,-,devin auth login 待执行
+G3-01,auth,ACP_BACKEND 注入影响认证策略,PASS,ACTUAL_RUN,set=host唯一源;unset=回退CLI凭据(二进制字符串实证)
+G3-02,auth,ACP_BACKEND unset 连续3会话零登录,PASS,ACTUAL_RUN,tropical-perigee/grateful-heliotrope/grass-tree 全完成只读任务
+G3-03,auth,driver 无条件 devin-browser 授权,PASS_FIXED,ACTUAL_RUN,ACP_SKIP_AUTH=1 跳过; P0-A 整改
+G3-04,isolation,同名仓库 lesson 泄漏,PASS_FIXED,ACTUAL_RUN,project key=basename+sha256(common-dir)8; worktree 共享/异仓隔离
+G3-05,privacy,acp-driver 全量日志可能含凭据,PASS_FIXED,ACTUAL_RUN,sanitize():仅方法/ID/字段形状/textLen
+G3-06,auth,devin -p REPL 凭据链,BLOCKED_AUTH,-,与 ACP 回退不同链; auth login 非 ACP 前提(修正)
+G2-11,driver-safety,白名单限定沙盒目录,PASS_FIXED,ACTUAL_RUN,UAT_SANDBOX 内才自动批准;越界路径拒绝
+G2-12,driver-correct,stopReason=end_turn 强校验,PASS_FIXED,ACTUAL_RUN,非end_turn/超时/异常→非零退出
+G2-13,learn-loop,T02 纠错→lesson 持久化,PASS_PARTIAL,ACTUAL_RUN,cleanup.sh 安全改写+lsn_dd5e5dec1d1cc617;MCP 调用未证记 NOT_VERIFIED
+G2-14,learn-loop,T03 新会话召回免复发,PASS,ACTUAL_RUN,cactus-resonance: lesson 注入+thought信号 lesson/pkill/unsafe
+G2-15,guard-block,真实 exec 被 E03 阻断,PASS,ACTUAL_RUN,audit 09:16:05 block admitted-tray;命令未执行
+G2-16,desktop,Desktop 会话 hook 全事件触发,PASS,ACTUAL_RUN,catnip-pram obs=54;audit 全天时间戳
+G2-17,ops,doctor+备份+回滚,PASS,ACTUAL_RUN,3pass/1warn; bak-20261115 在案; ROLLBACK.md
+G2-18,rollback,文档自身含宽匹配杀进程违例,PASS_FIXED,ACTUAL_RUN,agentmemory stop+lsof端口归属替代
+G2-19,sandbox,cwd前缀+符号链接逃逸,PASS_FIXED,ACTUAL_RUN,realpath+base+sep边界; evil目录/逃逸链接均拒
+G2-20,guard-block,ACP会话真实exec被E03阻断,PASS,ACTUAL_RUN,elegant-buckthorn audit 09:32:17;无permission先到hook deny
+G2-21,guard-fp,E05预执行计verify+E01误伤commit,PASS_FIXED,ACTUAL_RUN,PostToolUse成功+SHA输出才算verified;E01-EXEC须权限请求上下文;15/15
+G2-22,lesson-restore,临时删除后恢复全局lesson,PASS,ACTUAL_RUN,lsn_ddbc47a351659b4f 已重新入库

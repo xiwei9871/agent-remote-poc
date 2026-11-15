@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "defaultMode": "warn",
+  "auditDir": "${AGENT_GUARD_DIR}",
+  "rules": [
+    {
+      "id": "E03-PKILL-BROAD",
+      "mode": "block",
+      "events": ["PreToolUse"],
+      "tools": ["exec", "kill_shell", "write_to_process"],
+      "match": { "field": "tool_input.command", "regex": "\\b(pkill|killall)\\s+(-\\w+\\s+)*-f?\\s+['\\\"]?(?!.*--pidfile)(?!.*pgrep)" },
+      "requireAbsent": "\\b(pgrep -f|lsof|PID_FILE|--pidfile|kill \\$?\\()",
+      "lesson": "L-e03",
+      "reason": "Broad pkill/killall without PID-file or ownership check killed non-target processes before (E03). Use PID file + `lsof -d cwd` ownership verification, or confirm the match list with pgrep first."
+    },
+    {
+      "id": "E01-AUTO-APPROVE",
+      "mode": "block",
+      "events": ["PreToolUse"],
+      "tools": ["write", "edit", "apply_patch"],
+      "match": { "field": "any", "regex": "allow_once|allow_always|auto.?approve" },
+      "requireAbsent": "reject|deny|require.*approv|manual.*approv|autoApprove|guard\\.test\\.mjs|acp-driver\\.mjs",
+      "lesson": "L-e01",
+      "reason": "Code that auto-approves permission prompts (E01) is blocked unless it also requires an explicit allow-root/manual gate. Add a deny-by-default branch or a scoped --auto-approve flag."
+    },
+    {
+      "id": "E01-EXEC-AUTO-APPROVE",
+      "mode": "block",
+      "events": ["PreToolUse"],
+      "tools": ["exec"],
+      "match": { "field": "any", "regex": "(?=[\\s\\S]*request_permission)[\\s\\S]*(allow_once|allow_always|auto.?approv)" },
+      "requireAbsent": "reject|deny|require.*approv|manual.*approv",
+      "lesson": "L-e01",
+      "reason": "Shell code that auto-answers permission requests with allow (E01) is blocked unless it carries an explicit deny/manual gate. Plain commit messages mentioning approval are not matched (requires literal request_permission context)."
+    },
+    {
+      "id": "E05-PUSH-VERIFY",
+      "mode": "warn",
+      "events": ["PreToolUse"],
+      "tools": ["exec"],
+      "match": { "field": "tool_input.command", "regex": "git\\s+push" },
+      "lesson": "L-e05",
+      "reason": "Remember (E05): after pushing, verify with `git ls-remote` and confirm remote SHA == local HEAD before claiming delivery."
+    },
+    {
+      "id": "E05-STOP-VERIFY",
+      "mode": "block",
+      "events": ["Stop"],
+      "tools": [],
+      "sessionSignal": "pushed-not-verified",
+      "lesson": "L-e05",
+      "reason": "This session ran `git push` but no successful verification was observed: run `git ls-remote`, and when local HEAD is resolvable its SHA must appear in the remote output (E05)."
+    },
+    {
+      "id": "E02-FAIL-AS-PASS",
+      "mode": "warn",
+      "events": ["Stop"],
+      "tools": [],
+      "sessionSignal": "test-failed-unresolved",
+      "lesson": "L-e02",
+      "reason": "A test command failed this session and no passing rerun was recorded (E02). Do not report PASS without a verified rerun."
+    },
+    {
+      "id": "E04-FALSE-PASS-CLAIM",
+      "mode": "warn",
+      "events": ["Stop"],
+      "tools": [],
+      "sessionSignal": "claim-without-evidence",
+      "lesson": "L-e04",
+      "reason": "Session is ending with deliverable claims; ensure each PASS maps to an ACTUAL_RUN evidence artifact (E04)."
+    }
+  ]
+}
