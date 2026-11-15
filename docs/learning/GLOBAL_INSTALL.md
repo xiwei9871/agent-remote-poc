@@ -7,9 +7,11 @@ Gate 0/1 均为只读或隔离环境；以下每一项**写入真实用户级配
 | # | 变更 | 位置 | 影响面 | 回滚 |
 | --- | --- | --- | --- | --- |
 | A | `mcpServers.agentmemory`（stdio `npx @agentmemory/mcp@0.9.32`） | `~/.config/devin/config.json` | 所有新 Session 可见 54 个 memory_* 工具 | `connect devin --remove` 或恢复快照 |
-| B | `hooks` 键：agentmemory 6 hooks | 同上 | 每事件 spawn Node 脚本→localhost:3111；SessionStart/UPS 注入上下文 | 快照恢复；hooks 崩坏仅记错不影响会话（fail-open） |
+| B | `hooks` 键：agentmemory 6 hooks | 同上 | 每事件 spawn Node 脚本→localhost:3111；SessionStart 注入上下文 | 快照恢复；hooks 崩坏仅记错不影响会话（fail-open） |
+| B2 | **`AGENTMEMORY_INJECT_CONTEXT=true`（必需，实测默认不注入）** | hook 进程环境/`~/.agentmemory/.env` | 开启 SessionStart 上下文注入 | 删 env 行 |
 | C | `hooks` 键：本仓 guard hooks（PreToolUse/Stop/PostToolUse/PermissionRequest） | 同上 | E03 类可**阻断**命令；其余 warn | 摘除该 hooks 数组项即失效 |
 | D | agentmemory daemon 常驻（localhost:3111/3113） | `~/.agentmemory/` 数据+`.env`+secret | 本地端口 2 个；磁盘 ~数据量；keyless 无外传 | `agentmemory remove`；杀进程+删目录 |
+| E2 | `devin auth login`（CLI 未登录，headless/真实会话依赖） | 用户交互 | 解锁真实 Session 验收 T01–T08 | `devin auth logout` |
 | E | （可选）`EMBEDDING_PROVIDER=local` | `~/.agentmemory/.env` | 首次下载本地 embedding 模型 | 改回 noop 重启 |
 | F | （不推荐默认）AGENTMEMORY_LLM_PROVIDER 等外部 LLM 压缩 | 同上 | **会向外部 provider 发送会话摘要**——默认关闭，不批准不启用 | 删 env 行 |
 
