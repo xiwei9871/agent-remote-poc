@@ -26,3 +26,13 @@
 `ENFORCED` 状态 lesson 的 `prevention_check` 若为可执行形式
 （regex/command），编译进 `guard/policy.json`；CANDIDATE/VALIDATED 只进
 召回索引不产生阻断。无证据自动生成"永不再犯"规则 = 禁止项（自检）。
+
+## 已知边界（诚实声明）
+
+- **E05 SHA 校验强度**：`evt.cwd` 可解析本地 HEAD 时严格比对（ls-remote
+  输出必须含 HEAD SHA，否则 Stop 阻断记 mismatch）；`cwd` 缺失时降级为
+  "ls-remote 成功且输出含 40-hex"的形状级验证——此时只保证"执行过
+  核验命令"，不保证远端==本地。E05 整体定位为确定性提醒+可判定的
+  一致性检查，不是交付真实性的完备证明。
+- **回滚路径**：daemon 停止仅 `agentmemory stop` 为自动路径；fallback
+  为人工核身（pgrep -fl + lsof -p 确认归属），不做按端口批量终止。

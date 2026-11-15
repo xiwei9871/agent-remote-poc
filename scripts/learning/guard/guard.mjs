@@ -4,6 +4,7 @@
 //   (decision:block / hookSpecificOutput.additionalContext). Exit 2 = block.
 // Fail-open on internal errors; every decision is audit-logged.
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -51,6 +52,19 @@ function readSignals(sessionId) {
 
 const PUSH_RE = /git\s+push\b/;
 const VERIFY_RE = /git\s+ls-remote|gh\s+(api|pr\s+view)|refs\/heads/;
+const SHA_RE = /[0-9a-f]{40}/;
+
+// Resolve local HEAD for strict remote==local comparison. Returns null when
+// cwd is unknown/not a repo — the check then falls back to output shape only.
+function headSha(evt) {
+  const cwd = evt.cwd || evt.tool_input?.cwd || null;
+  if (!cwd) return null;
+  try {
+    const r = spawnSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8", timeout: 3000 });
+    const sha = (r.stdout || "").trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch { return null; }
+}
 const TEST_CMD_RE = /\b(pytest|unittest|npm\s+(test|run\s+test)|vitest|jest|cargo\s+test|go\s+test|node\s+--test)\b/;
 const FAIL_OUT_RE = /\b(failed|failure|FAILED|AssertionError|FAIL\b|✗|not ok)\b/;
 const PASS_OUT_RE = /\b(ok|passed|PASS|✓|all tests? passed)\b/i;
@@ -64,8 +78,13 @@ function classifyToolEvent(evt) {
     const ok = evt.tool_response?.success !== false;
     // Delivery signals only count on observed success, not on command intent.
     if (PUSH_RE.test(cmd) && ok && !/(rejected|error:|fatal:|failed)/i.test(out)) return "pushed";
-    // ls-remote must return a real ref SHA to count as verification.
-    if (VERIFY_RE.test(cmd) && ok && /[0-9a-f]{7,40}\s/.test(out)) return "verified-remote";
+    // ls-remote must return real ref SHAs; when local HEAD is resolvable the
+    // output must contain it (strict remote==local). Otherwise attempt-level.
+    if (VERIFY_RE.test(cmd) && ok && SHA_RE.test(out)) {
+      const head = headSha(evt);
+      if (head && !out.includes(head)) return "verify-mismatch";
+      return "verified-remote";
+    }
     if (TEST_CMD_RE.test(cmd)) {
       if (evt.tool_response?.success === false || FAIL_OUT_RE.test(out)) return "test-failed";
       if (PASS_OUT_RE.test(out)) return "test-passed";

@@ -49,7 +49,7 @@
       "tools": [],
       "sessionSignal": "pushed-not-verified",
       "lesson": "L-e05",
-      "reason": "This session ran `git push` but no `git ls-remote`/`gh api` verification was observed (E05). Run ls-remote and confirm remote SHA before finishing."
+      "reason": "This session ran `git push` but no successful verification was observed: run `git ls-remote`, and when local HEAD is resolvable its SHA must appear in the remote output (E05)."
     },
     {
       "id": "E02-FAIL-AS-PASS",

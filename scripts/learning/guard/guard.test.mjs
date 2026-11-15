@@ -86,6 +86,23 @@ test("E05: ls-remote with no SHA output does not count", () => {
   if (r.out?.decision !== "block") throw new Error(`empty ls-remote should still block, got ${r.stdout}`);
 });
 
+test("E05: strict — ls-remote containing local HEAD passes, mismatch blocks", () => {
+  const repo = dirname(dirname(dirname(fileURLToPath(import.meta.url)))); // agent-remote-poc
+  const head = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+  const post = (command, output, cwd) => ({
+    hook_event_name: "PostToolUse", tool_name: "exec",
+    tool_input: { command }, tool_response: { success: true, output, error: null }, cwd,
+  });
+  run(post("git push origin main", "ok"), "e05e");
+  run(post("git ls-remote origin main", `${head}\trefs/heads/main`, repo), "e05e");
+  const ok = run(stop, "e05e");
+  if (ok.out?.decision === "block") throw new Error(`HEAD match should pass, got ${ok.stdout}`);
+  run(post("git push origin main", "ok"), "e05f");
+  run(post("git ls-remote origin main", `${"0".repeat(40)}\trefs/heads/main`, repo), "e05f");
+  const bad = run(stop, "e05f");
+  if (bad.out?.decision !== "block") throw new Error(`SHA mismatch should block, got ${bad.stdout}`);
+});
+
 test("E01: commit message mentioning auto-approve is not blocked", () => {
   const r = run(execPre("git commit -m 'restrict auto-approve scope'"), "e01c");
   if (r.out?.decision === "block") throw new Error(`commit msg should not trigger E01, got ${r.stdout}`);
