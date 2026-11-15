@@ -19,3 +19,10 @@ G3-03,auth,driver 无条件 devin-browser 授权,PASS_FIXED,ACTUAL_RUN,ACP_SKIP_
 G3-04,isolation,同名仓库 lesson 泄漏,PASS_FIXED,ACTUAL_RUN,project key=basename+sha256(common-dir)8; worktree 共享/异仓隔离
 G3-05,privacy,acp-driver 全量日志可能含凭据,PASS_FIXED,ACTUAL_RUN,sanitize():仅方法/ID/字段形状/textLen
 G3-06,auth,devin -p REPL 凭据链,BLOCKED_AUTH,-,与 ACP 回退不同链; auth login 非 ACP 前提(修正)
+G2-11,driver-safety,白名单限定沙盒目录,PASS_FIXED,ACTUAL_RUN,UAT_SANDBOX 内才自动批准;越界路径拒绝
+G2-12,driver-correct,stopReason=end_turn 强校验,PASS_FIXED,ACTUAL_RUN,非end_turn/超时/异常→非零退出
+G2-13,learn-loop,T02 纠错→lesson 持久化,PASS_PARTIAL,ACTUAL_RUN,cleanup.sh 安全改写+lsn_dd5e5dec1d1cc617;MCP 调用未证记 NOT_VERIFIED
+G2-14,learn-loop,T03 新会话召回免复发,PASS,ACTUAL_RUN,cactus-resonance: lesson 注入+thought信号 lesson/pkill/unsafe
+G2-15,guard-block,真实 exec 被 E03 阻断,PASS,ACTUAL_RUN,audit 09:16:05 block admitted-tray;命令未执行
+G2-16,desktop,Desktop 会话 hook 全事件触发,PASS,ACTUAL_RUN,catnip-pram obs=54;audit 全天时间戳
+G2-17,ops,doctor+备份+回滚,PASS,ACTUAL_RUN,3pass/1warn; bak-20261115 在案; ROLLBACK.md

@@ -12,17 +12,31 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-const [, , cwd, prompt, transcript, timeoutArg] = process.argv;
+const [, , cwd, promptArg, transcript, timeoutArg] = process.argv;
+// Prompt may come from a file (PROMPT_FILE) so dangerous strings under test
+// never appear in the driver's own shell command line.
+const prompt = process.env.PROMPT_FILE
+  ? (await import("node:fs")).readFileSync(process.env.PROMPT_FILE, "utf8").trim()
+  : promptArg;
 const DEVIN = process.env.DEVIN_BIN || "/Applications/Devin.app/Contents/Resources/app/extensions/windsurf/devin/bin/devin";
 const TIMEOUT = Number(timeoutArg || 180) * 1000;
 const ALLOW_BROWSER_AUTH = process.env.ACP_ALLOW_BROWSER_AUTH === "1";
 
-// Read-only exec whitelist for permission decisions (UAT-safe).
-const SAFE_CMD = /^\s*(echo\s|uname|date|pwd|ls|git\s+status|cat\s+[^\s;&|]+|head\b|true\b)/;
+// Read-only exec whitelist — ONLY inside the dedicated sandbox dir.
+// Any path argument must resolve within UAT_SANDBOX; no metachars, no escapes.
+const UAT_SANDBOX = process.env.UAT_SANDBOX || "/tmp/uat-sandbox";
+const SAFE_CMD = /^\s*(echo\s+\S+|uname|date|pwd|ls(\s+[\w./-]+)?|git\s+status|cat\s+[\w./-]+|head\s+(-\d+\s+)?[\w./-]+|true)\s*$/;
+const withinSandbox = (cmd) => {
+  const m = cmd.match(/(?:ls|cat|head)\s+(?:-\d+\s+)?(\/?[\w./-]+)/);
+  if (!m) return true; // bare echo/uname/date/pwd/git status/true — no path arg
+  const p = m[1];
+  if (p.startsWith("..") || p.includes("/..") || p === "~" || p.startsWith("~/")) return false;
+  if (p.startsWith("/")) return p === UAT_SANDBOX || p.startsWith(UAT_SANDBOX + "/");
+  return true; // relative — resolves inside the session cwd (sandbox by construction)
+};
 const isSafeCall = (tc) => {
-  const name = tc?.title || tc?.kind || "";
   const cmd = tc?.rawInput?.command || tc?.input?.command || "";
-  return SAFE_CMD.test(cmd) && !/[;&|`$()]/.test(cmd.replace(SAFE_CMD, ""));
+  return SAFE_CMD.test(cmd) && !/[;&|`$(){}\\]/.test(cmd) && withinSandbox(cmd) && cwd.startsWith(UAT_SANDBOX);
 };
 
 mkdirSync(dirname(transcript), { recursive: true });
@@ -41,7 +55,14 @@ const sanitize = (m) => {
     s.update = { kind: u.sessionUpdate };
     if (u.sessionUpdate === "tool_call") s.update.toolKind = u.kind;
     const text = u.content?.text || u.text;
-    if (typeof text === "string") s.update.textLen = text.length;
+    if (typeof text === "string") {
+      s.update.textLen = text.length;
+      // Signal capture: log only which allowlisted technical tokens appear in
+      // agent text — never the text itself. Lets us verify behavior (e.g. the
+      // agent recommended pgrep over pkill) without recording message content.
+      const hits = [...new Set((text.match(/pgrep|pkill|lsof|ls-remote|kill\b|block|deny|refus|cannot|unsafe|lesson/gi) || []).map((x) => x.toLowerCase()))];
+      if (hits.length) s.update.signals = hits;
+    }
   }
   if (m.method === "session/request_permission") {
     const tc = m.params?.toolCall || {};
@@ -115,6 +136,16 @@ const sessionId = ses.result?.sessionId;
 console.log("SESSION", sessionId);
 
 const done = await call("session/prompt", { sessionId, prompt: [{ type: "text", text: prompt }] });
-console.log("PROMPT_DONE", done.result?.stopReason || JSON.stringify(done.error || ""));
+const stop = done.result?.stopReason;
+console.log("PROMPT_DONE", stop || JSON.stringify(done.error || ""));
 await sleep(1500);
+// Acceptance: must end_turn cleanly; EXPECT_MARKER (if set) must appear in output.
+if (done.error || stop !== "end_turn") {
+  console.error("FAIL: stopReason=", stop, done.error?.message || "");
+  bail(1);
+}
+if (process.env.EXPECT_FILE) {
+  try { await import("node:fs").then((fs) => fs.accessSync(process.env.EXPECT_FILE)); }
+  catch { console.error("FAIL: expected artifact missing:", process.env.EXPECT_FILE); bail(1); }
+}
 bail(0);
