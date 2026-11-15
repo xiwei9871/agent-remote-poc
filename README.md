@@ -37,11 +37,11 @@ POC_PASS。**
 | --- | --- |
 | P0 环境与隔离工作区 | PASS（实测） |
 | P1 DSH + Remote 插件安装、Host 启动 | PASS（实测，到达账号 401 边界） |
-| P2 Claude ACP 接入 | 部分 PASS（握手+spawn 实测；prompt 因上游 Provider 网关无响应阻塞） |
-| P2 Codex App Server | BLOCKED_AUTH（CLI 已装，未登录） |
-| P2 DSH 原生模型会话 | BLOCKED_AUTH（需 DeepSeek API key/OAuth） |
-| P3 Devin `devin acp` | 协议兼容 PASS；会话 BLOCKED_AUTH（ACP 模式强制要求 API key 或浏览器 PKCE，不复用本机凭据）；**上游无 Devin 适配器（代码级确认）** |
-| P4 跨设备 R01–R12 | BLOCKED（Remote 账号未登录；手机项生成 UAT 清单） |
-| P5 安全/回滚 | 已检查并文档化 |
+| P2 Claude ACP 接入 | 适配层 PASS（握手+spawn 实测）；端到端 BLOCKED_PROVIDER——根因已定位为 shenlan 网关 `claude-pro` 组全模型 403，z.ai key 余额为零 |
+| P2 Codex | **PASS**（隔离 CODEX_HOME+shenlan provider：`codex exec` 真实修 bug+4 tests OK；Remote 域 ready） |
+| P2 DSH 原生模型会话 | **PASS**（pi-ai→shenlan `gpt-6.1-sol`，headless 真实修 bug+4 tests OK） |
+| P3 Devin `devin acp` | **PASS**（用户浏览器 PKCE 授权后 initialize/auth/session/prompt 全通，真实修 bug+4 tests OK）；**上游无 Devin 适配器（代码级确认）** |
+| P4 跨设备 R01–R12 | BLOCKED（Remote 插件账号未登录——当前唯一全局阻塞；手机项生成 UAT 清单） |
+| P5 安全/回滚 | 已检查并文档化；探针默认拒权限、PID 专属进程管理已整改并测试（10/10） |
 
 详见 `docs/` 下各文档与 `docs/TEST_MATRIX.csv`。

@@ -14,10 +14,10 @@ Devin 无法操作实体手机。以下步骤需真人执行并回填结果；�
   - 成功后 host.log 应不再出现 `ACCOUNT_AUTH_REQUIRED`，Host 对客户端可见。
 - [ ] **设备指纹确认**：在客户端与 host.log 核对 fingerprint（当前
       `47C2 3346 AA7C`）。
-- [ ] Codex：`~/agent-hub-poc/tools/node_modules/.bin/codex login`（ChatGPT 或 API key）
-- [ ] Claude：修复 Provider（可用 Anthropic 直连 key；第三方网关当前对 SDK 调用
-      无响应）。可选：`claude login` 或替换 settings env。
-- [ ] DSH 原生：`DEEPSEEK_API_KEY` 或 DeepSeek 账号 OAuth。
+- [x] Codex：隔离 `CODEX_HOME`+shenlan provider 已通（无需官方登录；Remote 域 ready）
+- [ ] Claude：修复 Provider——shenlan `claude-pro` 组对该 token 全模型 403；
+      需网关侧开通该组，或提供 Anthropic 直连 key / 有余额的 z.ai 账号。
+- [x] DSH 原生：pi-ai→shenlan `gpt-6.1-sol` 已通（headless 实测修 bug OK）
 - [ ] Android 客户端（二选一或都测）：
   - 官方 APK：github.com/liguobao/ds-harness-remote/releases/latest
   - dsh-Go：github.com/ccch1mneyyy/dsh-Go releases

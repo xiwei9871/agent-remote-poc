@@ -81,6 +81,47 @@
 `['antigravity','cursor','pi','claude','opencode','hermes']`——**自定义 id（如
 `devin`）会被静默过滤，不产生适配**。见 ACP_COMPATIBILITY.md。
 
+## V0.1.1 新增：Provider 本地化配置
+
+### Codex（`$POC/codex-home/config.toml`，CODEX_HOME 隔离）
+
+```toml
+model = "gpt-6.1-sol"
+model_provider = "shenlan"
+[model_providers.shenlan]
+name = "shenlan-gateway"
+base_url = "https://www.shenlanqaq.com/v1"
+wire_api = "responses"
+env_key = "SHENLAN_API_KEY"      # key 只走 env，不落配置
+requires_openai_auth = false
+```
+
+### DSH（`profiles/*/cordis.patch.yml` 追加）
+
+```yaml
+- id: llm-pi-ai
+  config:
+    providers:
+      shenlan:
+        apiKeyEnv: SHENLAN_API_KEY
+        displayName: Shenlan Gateway
+        api: openai-completions        # 网关实测 200（responses 亦可）
+        baseURL: https://www.shenlanqaq.com/v1
+        models: [{ id: gpt-6.1-sol }]
+- id: agent-default-model
+  config: { provider: shenlan, model: gpt-6.1-sol }
+```
+
+### Host 启动环境（`$POC/env.sh`，mode 600，gitignore）
+
+```sh
+export CODEX_HOME="$POC/codex-home"
+export SHENLAN_API_KEY="<本机 OpenClaw 凭据，运行时注入，不入库>"
+```
+
+`start-host.sh` 在启动前 source 该文件，使插件 spawn 的 `codex app-server`
+继承隔离 CODEX_HOME 与 key。
+
 ## 本机模型/凭据现状（事实记录）
 
 - `claude` CLI v2.1.309：配置于 `~/.claude/settings.json`，走第三方网关

@@ -6,10 +6,19 @@ POC 全部内容限制在 `~/agent-hub-poc/` 与本仓 `~/agent-remote-poc/`；�
 
 ## 1. 停止进程
 
+只停 POC 专属进程，不使用 `pkill`（可能误杀其他 DSH 实例）：
+
 ```sh
-pkill -f "dsh web"
-# 确认无残留
+POC=~/agent-hub-poc sh scripts/stop-host.sh
+```
+
+机制：`$POC/dsh-home/host.pid` 记录 PID；停止前用 `lsof -d cwd` 校验该进程的
+工作目录位于 POC 沙箱内，不匹配则拒绝并保留 pidfile 供人工检查。
+手工核验残留（只读，不杀进程）：
+
+```sh
 pgrep -fl "dsh web|claude-agent-acp|codex app-server" || echo "clean"
+# 若确有 POC 残留进程，先 lsof -a -p <pid> -d cwd 确认属于 agent-hub-poc 再 kill
 ```
 
 ## 2. 移除 Remote 设备授权（可选但建议）
