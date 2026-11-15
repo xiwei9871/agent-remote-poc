@@ -1,0 +1,42 @@
+id,category,item,status,evidence,notes
+P0-01,install,环境核查(arch/node/disk/既有Agent),PASS,ACTUAL_RUN,"M4 arm64, macOS 26.7.2, node 24.14.1"
+P0-02,install,隔离工作区与DSH_HOME,PASS,ACTUAL_RUN,~/agent-hub-poc; 另加 codex-home/env.sh 隔离
+P0-03,install,上游版本/SHA核实,PASS,ACTUAL_RUN,npm dist-tags + git ls-remote
+P0-04,install,安装脚本审查,PASS,STATIC,无 install/postinstall 生命周期脚本
+P1-01,install,DSH 0.2.2-rc.1 本地安装,PASS,ACTUAL_RUN,dsh --version
+P1-02,install,dsh web 启动+端口绑定,PASS,ACTUAL_RUN,127.0.0.1:3080 仅 localhost
+P1-03,install,Remote 0.6.5 插件加载,PASS,ACTUAL_RUN,host identity/fingerprint/server 日志
+P1-04,install,Host 无公网监听,PASS,ACTUAL_RUN,lsof 全 127.0.0.1
+P1-05,install,托管服务连通性,PASS,ACTUAL_RUN,dsh.r2049.cn 200; 控制连接达 401 应用层
+P1-06,auth,Remote 账号登录/Host 授权,BLOCKED,ACTUAL_RUN,ACCOUNT_AUTH_REQUIRED 401; Remote 面板 OAuth 未做
+P2-01,agent,Claude ACP 适配层(initialize/sessionNew),PASS,ACTUAL_RUN,独立探针+插件内 spawn 双重验证
+P2-02,agent,Claude 会话端到端,BLOCKED_PROVIDER,ACTUAL_RUN,网关 claude-pro 组全模型 403; z.ai key 有效但余额为零
+P2-03,agent,Codex 端到端真实任务,PASS,ACTUAL_RUN,codex exec shenlan/gpt-6.1-sol: 修bug+4tests OK; 5411 tokens
+P2-04,agent,Codex Remote 域就绪,PASS,ACTUAL_RUN,Codex Remote domain ready（CODEX_HOME+env key）
+P2-05,agent,DSH 原生端到端真实任务,PASS,ACTUAL_RUN,dsh headless pi-ai->shenlan: 修bug+4tests OK
+P2-06,agent,Devin devin acp 协议+会话,PASS,ACTUAL_RUN,用户 PKCE 授权后 initialize/auth/session/prompt 全通
+P2-07,agent,Devin 端到端真实任务,PASS,ACTUAL_RUN,buggy-cli 修复+diff+4tests OK（隔离 worktree, auto-approve）
+P2-08,agent,上游 Devin 适配器存在性,FAIL_EXPECTED,STATIC,acp gateway 白名单 6 id, devin 被静默过滤
+P2-09,agent,后端隔离/无静默降级,PASS,STATIC+RUN,缺二进制明确报 *_UNAVAILABLE; Codex域独立
+P3-01,task,统一测试夹具,PASS,ACTUAL_RUN,buggy-cli: 4 tests/1 设计失败; 4 worktree 隔离
+P3-02,task,Agent 统一修 bug 任务,PASS_PARTIAL,ACTUAL_RUN,Codex/Devin/DSH PASS; Claude BLOCKED_PROVIDER
+P3-03,task,探针默认拒权限,PASS,ACTUAL_RUN,reject_once/cancelled; auto-approve 限 allow-root 内
+P3-04,task,cancel 为通知+FAIL 退出码,PASS,ACTUAL_RUN,node --test 10/10 PASS
+P3-05,task,POC 专属进程管理,PASS,ACTUAL_RUN,PID+lsof cwd 归属; 拒杀非 POC 进程已测
+R01,remote,Web 打开本地 Host,BLOCKED,-,需 Remote 账号
+R02,remote,Web 继续已有会话,BLOCKED,-,需 Remote 账号
+R03,remote,手机查看运行中 Agent,BLOCKED,-,需 Android 真机+账号
+R04,remote,手机发送追加指令,BLOCKED,-,UAT
+R05,remote,手机审批受控操作,BLOCKED,-,UAT
+R06,remote,同时管理两个 Agent,BLOCKED,-,设计支持(进程/连接隔离); Codex域已就绪
+R07,remote,手机电脑交替操作,BLOCKED,-,UAT
+R08,remote,断网重连恢复,BLOCKED,-,UAT (reconnect 4s-30s 退避)
+R09,remote,Host 进程重启恢复,PASS_PARTIAL,ACTUAL_RUN,stop/start 脚本重启后 identity/凭据/后端均恢复; 会话恢复未验
+R10,remote,模型切换不影响他会话,BLOCKED,-,UAT
+R11,remote,两客户端同时连接,BLOCKED,-,UAT
+R12,remote,手机后台切换恢复,BLOCKED,-,UAT
+S01,security,远程终端默认关闭,PASS,ACTUAL_RUN,terminal.enabled=false
+S02,security,npm audit 基线,PASS,ACTUAL_RUN,209 vulns 已记录
+S03,security,凭据不落地,PASS,ACTUAL_RUN,key 仅 env/本地凭据服务; git 无密钥; env.sh 600+gitignore
+S04,security,文件预览/目录边界,PASS,STATIC,只读+有界枚举
+S05,security,回滚步骤,PASS,ACTUAL_RUN,脚本化 stop+归属校验; 无 pkill
