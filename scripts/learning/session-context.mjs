@@ -3,8 +3,9 @@
 // SessionStart (and optionally per-turn). agentmemory lessons are project
 // scoped; this hook adds the always-on global layer on top, bounded by a
 // token budget. Reads the same local daemon; fails open, never blocks.
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 
@@ -20,14 +21,22 @@ const readInput = async () => {
   try { return JSON.parse(s); } catch { return null; }
 };
 
+// Canonical project key: basename + short hash of the repo's common-dir.
+// Same repo across worktrees shares one key; different repos that happen to
+// share a basename can NEVER collide (the hash differs by full path).
 const projectName = () => {
   const dir = process.env.DEVIN_PROJECT_DIR || process.cwd();
   try {
-    const top = execSync("git rev-parse --show-toplevel", { cwd: dir, timeout: 400, stdio: ["ignore", "pipe", "ignore"] })
-      .toString().trim();
-    if (top) return top.split("/").pop();
+    const [top, common] = execSync("git rev-parse --show-toplevel --git-common-dir", {
+      cwd: dir, timeout: 400, stdio: ["ignore", "pipe", "ignore"],
+    }).toString().trim().split(/\r?\n/);
+    const canonical = realpathSync(resolve(dir, common || ".git"));
+    const base = (top ? dirname(canonical) : dir).split("/").filter(Boolean).pop() || "repo";
+    return `${base}-${createHash("sha256").update(canonical).digest("hex").slice(0, 8)}`;
   } catch {}
-  return dir.split("/").filter(Boolean).pop() || "unknown";
+  const rp = realpathSync(dir);
+  const base = rp.split("/").filter(Boolean).pop() || "unknown";
+  return `${base}-${createHash("sha256").update(rp).digest("hex").slice(0, 8)}`;
 };
 
 async function fetchLessons(project) {

@@ -13,3 +13,9 @@ G2-07,revoke,T05 撤销后不再注入,PASS,ACTUAL_RUN,lessons/delete→注入�
 G2-08,desktop,Desktop 会话加载同机制,NOT_TESTED,-,需用户开 Desktop 新会话
 G2-09,cloud,云端自动配置,UNSUPPORTED,-,本地 daemon 不可达; 需部署+Secrets 另行批准
 G2-10,auth,devin -p 交互会话,BLOCKED_AUTH,-,devin auth login 待执行
+G3-01,auth,ACP_BACKEND 注入影响认证策略,PASS,ACTUAL_RUN,set=host唯一源;unset=回退CLI凭据(二进制字符串实证)
+G3-02,auth,ACP_BACKEND unset 连续3会话零登录,PASS,ACTUAL_RUN,tropical-perigee/grateful-heliotrope/grass-tree 全完成只读任务
+G3-03,auth,driver 无条件 devin-browser 授权,PASS_FIXED,ACTUAL_RUN,ACP_SKIP_AUTH=1 跳过; P0-A 整改
+G3-04,isolation,同名仓库 lesson 泄漏,PASS_FIXED,ACTUAL_RUN,project key=basename+sha256(common-dir)8; worktree 共享/异仓隔离
+G3-05,privacy,acp-driver 全量日志可能含凭据,PASS_FIXED,ACTUAL_RUN,sanitize():仅方法/ID/字段形状/textLen
+G3-06,auth,devin -p REPL 凭据链,BLOCKED_AUTH,-,与 ACP 回退不同链; auth login 非 ACP 前提(修正)

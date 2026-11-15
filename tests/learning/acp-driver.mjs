@@ -11,7 +11,32 @@ const DEVIN = process.env.DEVIN_BIN || "/Applications/Devin.app/Contents/Resourc
 const TIMEOUT = Number(timeoutArg || 180) * 1000;
 
 mkdirSync(dirname(transcript), { recursive: true });
-const log = (dir, obj) => appendFileSync(transcript, JSON.stringify({ t: Date.now(), dir, ...obj }) + "\n");
+// Sanitized logging: record only event shape — never full params (prompts may
+// contain secrets; authenticate params contain credentials). Text is truncated.
+const sanitize = (m) => {
+  const s = { t: Date.now() };
+  if (m.id != null) s.id = m.id;
+  if (m.method) s.method = m.method;
+  if (m.error) s.error = { code: m.error.code, message: String(m.error.message || "").slice(0, 200) };
+  if (m.result) {
+    const r = m.result;
+    s.result = {
+      keys: Object.keys(r),
+      sessionId: r.sessionId,
+      agentName: r.agentInfo?.name,
+      stopReason: r.stopReason,
+    };
+  }
+  if (m.params?.sessionId) s.sessionId = m.params.sessionId;
+  if (m.method === "session/update") {
+    const u = m.params?.update || {};
+    s.update = { kind: u.sessionUpdate };
+    const text = u.content?.text || u.text;
+    if (typeof text === "string") s.update.textLen = text.length;
+  }
+  return s;
+};
+const log = (dir, obj) => appendFileSync(transcript, JSON.stringify({ dir, ...sanitize(obj) }) + "\n");
 
 const p = spawn(DEVIN, ["acp"], { cwd, stdio: ["pipe", "pipe", "inherit"] });
 let buf = "";
@@ -43,8 +68,12 @@ const init = await call("initialize", { protocolVersion: 1, clientCapabilities: 
 if (init.error) { console.error("init failed", init.error); bail(2); }
 console.log("INIT", init.result?.agentInfo?.name || "ok");
 
-const auth = await call("authenticate", { methodId: "devin-browser" });
-console.log("AUTH", auth.error ? JSON.stringify(auth.error) : "ok");
+const skipAuth = process.env.ACP_SKIP_AUTH === "1";
+let auth = { skipped: true };
+if (!skipAuth) {
+  auth = await call("authenticate", { methodId: "devin-browser" });
+}
+console.log("AUTH", skipAuth ? "skipped(ACP_SKIP_AUTH)" : (auth.error ? JSON.stringify(auth.error) : "ok"));
 
 const ses = await call("session/new", { cwd, mcpServers: [] });
 if (ses.error) { console.error("session/new failed", JSON.stringify(ses.error)); bail(2); }
