@@ -1,0 +1,15 @@
+G1-01,install,agentmemory 0.9.32 隔离安装+daemon,PASS,ACTUAL_RUN,REST 3111/viewer 3113/engine 49134; secret 鉴权
+G1-02,install,connect devin --with-hooks 隔离写入,PASS,ACTUAL_RUN,合并保留既有键; 自动备份
+G1-03,feature,SessionStart 注入项目 lesson,PASS,ACTUAL_RUN,AGENTMEMORY_INJECT_CONTEXT=true 必需(文档未强调)
+G1-04,feature,项目隔离(proj-b 无泄漏),PASS,ACTUAL_RUN,git common-dir 分区
+G1-05,feature,guard 模拟事件阻断,PASS,ACTUAL_RUN,E01/E03/E05 decision:block; benign 静默; audit 落证
+G2-01,real-session,真实新会话 hooks 自动加载,PASS,ACTUAL_RUN,loaded=10 devin=10(ACP buttery-marigold)
+G2-02,real-session,MCP 自动连接,PASS,ACTUAL_RUN,agentmemory connected
+G2-03,real-session,lesson 影响真实决策,PASS,ACTUAL_RUN,agent 引 lesson 弃 pkill 选 pgrep
+G2-04,real-session,T02 真实纠错→持久化,BLOCKED_AUTH,-,需 devin auth login
+G2-05,real-session,T03 双会话复现不犯,PASS_PARTIAL,ACTUAL_RUN,lesson 注入已证; 标准链路待 auth
+G2-06,real-session,T04 新项全局不泄A,BLOCKED_AUTH,-,隔离已证; 真实新项待 auth
+G2-07,revoke,T05 撤销后不再注入,PASS,ACTUAL_RUN,lessons/delete→注入消失
+G2-08,desktop,Desktop 会话加载同机制,NOT_TESTED,-,需用户开 Desktop 新会话
+G2-09,cloud,云端自动配置,UNSUPPORTED,-,本地 daemon 不可达; 需部署+Secrets 另行批准
+G2-10,auth,devin -p 交互会话,BLOCKED_AUTH,-,devin auth login 待执行
