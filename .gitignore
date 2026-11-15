@@ -1,0 +1,4 @@
+evidence/
+*.local
+.DS_Store
+node_modules/

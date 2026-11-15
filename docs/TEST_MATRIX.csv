@@ -1,0 +1,38 @@
+id,category,item,status,evidence,notes
+P0-01,install,环境核查(arch/node/disk/既有Agent),PASS,ACTUAL_RUN,"M4 arm64, macOS 26.7.2, node 24.14.1, 93GiB free"
+P0-02,install,隔离工作区与DSH_HOME,PASS,ACTUAL_RUN,~/agent-hub-poc 未污染 ~/.dsh
+P0-03,install,上游版本/SHA核实,PASS,ACTUAL_RUN,npm dist-tags + git ls-remote 记录于 INSTALLATION.md
+P0-04,install,安装脚本审查,PASS,STATIC,两包均无 install/postinstall 生命周期脚本
+P1-01,install,DSH 0.2.2-rc.1 本地安装,PASS,ACTUAL_RUN,dsh --version
+P1-02,install,dsh web 启动+端口绑定,PASS,ACTUAL_RUN,127.0.0.1:3080 仅 localhost
+P1-03,install,Remote 0.6.5 插件加载,PASS,ACTUAL_RUN,host identity/fingerprint/server 日志
+P1-04,install,Host 无公网监听,PASS,ACTUAL_RUN,lsof 全 127.0.0.1
+P1-05,install,托管服务连通性,PASS,ACTUAL_RUN,dsh.r2049.cn 200; 插件控制连接达 401 应用层
+P1-06,auth,Remote 账号登录/Host 授权,BLOCKED,ACTUAL_RUN,ACCOUNT_AUTH_REQUIRED 401; 需用户 OAuth/邀请码
+P2-01,agent,Claude ACP 适配层(initialize),PASS,ACTUAL_RUN,独立探针+插件内 spawn 双重验证
+P2-02,agent,Claude 会话端到端,BLOCKED,ACTUAL_RUN,Provider 网关 shenlanqaq.com 对 SDK 调用静默; claude -p 同样无输出
+P2-03,agent,Codex app-server 接入,BLOCKED,ACTUAL_RUN,域初始化 OK; CODEX_AUTH_REQUIRED; codex 未登录
+P2-04,agent,DSH 原生模型会话,BLOCKED,STATIC,仅 DeepSeek account/api-key/pi-ai Provider; 无凭据
+P2-05,agent,Devin devin acp 协议兼容,PASS,ACTUAL_RUN,initialize PASS; agentInfo=Devin Agent(affogato)
+P2-06,agent,Devin ACP 会话,BLOCKED,ACTUAL_RUN,-32000 需 meta.api_key 或浏览器 PKCE
+P2-07,agent,上游 Devin 适配器存在性,FAIL_EXPECTED,STATIC,acp gateway 白名单无 devin; 自定义 id 静默过滤
+P2-08,agent,后端隔离/无静默降级,PASS,STATIC+RUN,缺二进制明确报 *_BINARY_UNAVAILABLE
+P3-01,task,统一测试夹具,PASS,ACTUAL_RUN,buggy-cli: 4 tests / 1 设计失败
+P3-02,task,Agent 统一修 bug 任务,NOT_TESTED,-,四个通道均 BLOCKED 于授权, 未伪造
+R01,remote,Web 打开本地 Host,BLOCKED,-,前置就绪; 需 Remote 账号
+R02,remote,Web 继续已有会话,BLOCKED,-,需 Remote 账号+已授权 Provider
+R03,remote,手机查看运行中 Agent,BLOCKED,-,需 Android 真机+账号
+R04,remote,手机发送追加指令,BLOCKED,-,UAT
+R05,remote,手机审批受控操作,BLOCKED,-,UAT
+R06,remote,同时管理两个 Agent,BLOCKED,-,UAT (设计支持: RPC/stream 按连接隔离)
+R07,remote,手机电脑交替操作,BLOCKED,-,UAT
+R08,remote,断网重连恢复,BLOCKED,-,UAT (reconnect 4s-30s 退避已配置)
+R09,remote,Host 进程重启恢复,BLOCKED,-,UAT; 工作区/凭据已持久化在 DSH_HOME
+R10,remote,模型切换不影响他会话,BLOCKED,-,UAT
+R11,remote,两客户端同时连接,BLOCKED,-,UAT (README: 并发无上限)
+R12,remote,手机后台切换恢复,BLOCKED,-,UAT
+S01,security,远程终端默认关闭,PASS,ACTUAL_RUN,terminal.enabled=false 已写入 profile
+S02,security,npm audit 基线,PASS,ACTUAL_RUN,209 vulns (undici/zod) 已记录接受为预览版风险
+S03,security,凭据不落地日志,PASS,STATIC,token/密钥未进入 git; evidence 脱敏
+S04,security,文件预览/目录边界,PASS,STATIC,只读+有界枚举; 未做破坏性验证
+S05,security,回滚步骤,PASS,DOC,ROLLBACK.md 已验证路径清单
