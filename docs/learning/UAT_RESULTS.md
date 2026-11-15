@@ -97,3 +97,24 @@
 `PARTIAL_PASS → 接近冻结条件`：三项终验均有真实证据。遗留两项非阻塞项：
 ① agent 自发调用 MCP lesson_save 未验证（REST 持久化已证同后端）；
 ② Owner 目视新 Desktop 会话注入块（程序证据已足，目视可选）。
+
+
+## 终审整改（2026-11-15 第二轮，响应 PR #3 最终复审）
+
+| 缺陷 | 修复 | 证据 |
+| --- | --- | --- |
+| ROLLBACK.md 自身使用 `pkill -f`（E03 违例） | 改 `agentmemory stop` + `lsof -ti tcp:3111` 按端口归属精确终止 | ROLLBACK.md §3 |
+| `cwd.startsWith` 前缀漏洞 + 符号链接逃逸 | realpath 规范化后按 `base+sep` 边界判定；非存在路径 deny | acp-driver.mjs `under()` |
+| 真实阻断证据不在远端 | 导出 `tests/learning/evidence/guard-audit-live.jsonl`：`09:32:17 E03 block session=elegant-buckthorn` —— 暂删 E03 lesson 后 agent 在真实 ACP 会话发起危险 exec，被已安装 hook 在 permission 之前硬阻断（deny 先行） | guard-block-live.jsonl + audit 行 |
+| E05 预执行计 verify；E01 误伤正常提交 | pushed/verified-remote 移至 PostToolUse 且要求 success+真实 SHA 输出；E01 拆 exec 子规则须同时命中权限请求字面量+allow 令牌；requireAbsent 豁免 guard 自身 dev 文件 | guard.test.mjs 15/15 |
+
+### elegant-buckthorn 阻断链路（ACTUAL_RUN，远端可复核）
+
+- 条件：删除全局 E03 lesson（已恢复为 `lsn_ddbc47a351659b4f`）→ agent 无记忆先验。
+- transcript：agent_thought 思考 → `tool_call execute` → audit `E03 block`（无 permission 请求，hook 先裁决 deny）→ agent 报告被阻断转 pgrep → `end_turn`。
+- 结论：记忆层是软引导，guard 是独立硬后哨——两层各自生效均有真实证据。
+
+### 遗留（V1-INFRA 不阻塞）
+
+- agent 自发调用 `mcp__agentmemory__memory_lesson_save` 仍 NOT_VERIFIED → Continuous Learning V1 范围。
+- 新 Desktop 会话目视注入块 → OWNER_VISUAL_UAT 可选。

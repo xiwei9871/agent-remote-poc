@@ -61,16 +61,39 @@ test("E05: git push warns at exec time", () => {
 });
 
 test("E05: stop after push without ls-remote is blocked", () => {
-  run(execPre("git push origin main"), "e05b");
+  run(postExec("git push origin main", "To github.com:x/y.git  main -> main", true), "e05b");
   const r = run(stop, "e05b");
   if (r.out?.decision !== "block") throw new Error(`expected block on unverified delivery, got ${r.stdout}`);
 });
 
+test("E05: failed push does not force verify-block", () => {
+  run(postExec("git push origin main", "fatal: remote error", false), "e05b2");
+  const r = run(stop, "e05b2");
+  if (r.out?.decision === "block") throw new Error(`failed push should not count as delivered, got ${r.stdout}`);
+});
+
 test("E05: stop after push + ls-remote passes", () => {
-  run(execPre("git push origin main"), "e05c");
-  run(execPre("git ls-remote origin main"), "e05c");
+  run(postExec("git push origin main", "To github.com:x/y.git  main -> main", true), "e05c");
+  run(postExec("git ls-remote origin main", "a1c1a05735037ca2b1f939d94781198cecf640db\trefs/heads/main", true), "e05c");
   const r = run(stop, "e05c");
   if (r.out?.decision === "block") throw new Error(`verified push should pass, got ${r.stdout}`);
+});
+
+test("E05: ls-remote with no SHA output does not count", () => {
+  run(postExec("git push origin main", "To github.com:x/y.git", true), "e05d");
+  run(postExec("git ls-remote origin main", "", true), "e05d");
+  const r = run(stop, "e05d");
+  if (r.out?.decision !== "block") throw new Error(`empty ls-remote should still block, got ${r.stdout}`);
+});
+
+test("E01: commit message mentioning auto-approve is not blocked", () => {
+  const r = run(execPre("git commit -m 'restrict auto-approve scope'"), "e01c");
+  if (r.out?.decision === "block") throw new Error(`commit msg should not trigger E01, got ${r.stdout}`);
+});
+
+test("E01: exec code auto-answering request_permission is blocked", () => {
+  const r = run(execPre("node -e 'on(\"session/request_permission\", () => respond(allow_once))'"), "e01d");
+  if (r.out?.decision !== "block") throw new Error(`expected block, got ${r.stdout}`);
 });
 
 test("E02: stop after failed test warns", () => {

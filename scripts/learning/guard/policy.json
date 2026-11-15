@@ -17,11 +17,21 @@
       "id": "E01-AUTO-APPROVE",
       "mode": "block",
       "events": ["PreToolUse"],
-      "tools": ["write", "edit", "apply_patch", "exec"],
+      "tools": ["write", "edit", "apply_patch"],
       "match": { "field": "any", "regex": "allow_once|allow_always|auto.?approve" },
-      "requireAbsent": "reject|deny|require.*approv|manual.*approv|autoApprove",
+      "requireAbsent": "reject|deny|require.*approv|manual.*approv|autoApprove|guard\\.test\\.mjs|acp-driver\\.mjs",
       "lesson": "L-e01",
       "reason": "Code that auto-approves permission prompts (E01) is blocked unless it also requires an explicit allow-root/manual gate. Add a deny-by-default branch or a scoped --auto-approve flag."
+    },
+    {
+      "id": "E01-EXEC-AUTO-APPROVE",
+      "mode": "block",
+      "events": ["PreToolUse"],
+      "tools": ["exec"],
+      "match": { "field": "any", "regex": "(?=[\\s\\S]*request_permission)[\\s\\S]*(allow_once|allow_always|auto.?approv)" },
+      "requireAbsent": "reject|deny|require.*approv|manual.*approv",
+      "lesson": "L-e01",
+      "reason": "Shell code that auto-answers permission requests with allow (E01) is blocked unless it carries an explicit deny/manual gate. Plain commit messages mentioning approval are not matched (requires literal request_permission context)."
     },
     {
       "id": "E05-PUSH-VERIFY",

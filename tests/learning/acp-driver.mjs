@@ -23,20 +23,25 @@ const TIMEOUT = Number(timeoutArg || 180) * 1000;
 const ALLOW_BROWSER_AUTH = process.env.ACP_ALLOW_BROWSER_AUTH === "1";
 
 // Read-only exec whitelist — ONLY inside the dedicated sandbox dir.
-// Any path argument must resolve within UAT_SANDBOX; no metachars, no escapes.
+// Path args must realpath-resolve within UAT_SANDBOX (defeats prefix tricks
+// like /tmp/uat-sandbox-evil and symlink escapes).
+import { realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
 const UAT_SANDBOX = process.env.UAT_SANDBOX || "/tmp/uat-sandbox";
+const real = (p) => { try { return realpathSync(p); } catch { return null; } };
+const SANDBOX_REAL = real(UAT_SANDBOX) || UAT_SANDBOX;
+const CWD_REAL = real(cwd) || cwd;
+const under = (p, base) => p === base || p.startsWith(base + sep);
 const SAFE_CMD = /^\s*(echo\s+\S+|uname|date|pwd|ls(\s+[\w./-]+)?|git\s+status|cat\s+[\w./-]+|head\s+(-\d+\s+)?[\w./-]+|true)\s*$/;
 const withinSandbox = (cmd) => {
   const m = cmd.match(/(?:ls|cat|head)\s+(?:-\d+\s+)?(\/?[\w./-]+)/);
   if (!m) return true; // bare echo/uname/date/pwd/git status/true — no path arg
-  const p = m[1];
-  if (p.startsWith("..") || p.includes("/..") || p === "~" || p.startsWith("~/")) return false;
-  if (p.startsWith("/")) return p === UAT_SANDBOX || p.startsWith(UAT_SANDBOX + "/");
-  return true; // relative — resolves inside the session cwd (sandbox by construction)
+  const rp = real(resolve(CWD_REAL, m[1])); // resolves .., ~-free by regex, follows symlinks
+  return rp != null && under(rp, SANDBOX_REAL);
 };
 const isSafeCall = (tc) => {
   const cmd = tc?.rawInput?.command || tc?.input?.command || "";
-  return SAFE_CMD.test(cmd) && !/[;&|`$(){}\\]/.test(cmd) && withinSandbox(cmd) && cwd.startsWith(UAT_SANDBOX);
+  return SAFE_CMD.test(cmd) && !/[;&|`$(){}\\]/.test(cmd) && withinSandbox(cmd) && under(CWD_REAL, SANDBOX_REAL);
 };
 
 mkdirSync(dirname(transcript), { recursive: true });
@@ -53,7 +58,7 @@ const sanitize = (m) => {
   if (m.method === "session/update") {
     const u = m.params?.update || {};
     s.update = { kind: u.sessionUpdate };
-    if (u.sessionUpdate === "tool_call") s.update.toolKind = u.kind;
+    if (u.sessionUpdate === "tool_call") { s.update.toolKind = u.kind; if (u.status) s.update.status = u.status; }
     const text = u.content?.text || u.text;
     if (typeof text === "string") {
       s.update.textLen = text.length;

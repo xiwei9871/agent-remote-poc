@@ -8,8 +8,10 @@
 2. **停用全部 hooks**：恢复 `config.json` 备份
    （`~/.agentmemory/backups/devin-hooks-*` 或 `scripts/learning/backup.sh`
    快照）。
-3. **停 daemon**：`pkill -f agentmemory`（此处精确匹配二进制名可接受，
-   另有 `agentmemory stop`）；端口释放即完成。
+3. **停 daemon**：首选 `agentmemory stop`（官方命令）。若不可用，按端口
+   归属精确取 PID：`lsof -ti tcp:3111 | xargs kill`——只终止监听 3111
+   的进程；禁止 `pkill -f`（-f 匹配完整命令行，会误杀命令行里含
+   agentmemory 字样的无关进程，见 E03）。
 4. **彻底卸载**：`npx @agentmemory/agentmemory@0.9.32 remove`（官方卸载器，
    清除其创建的 config 项与 daemon），再 `rm -rf ~/.agentmemory`；
    本仓侧无其他系统足迹。

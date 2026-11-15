@@ -26,3 +26,8 @@ G2-14,learn-loop,T03 新会话召回免复发,PASS,ACTUAL_RUN,cactus-resonance: 
 G2-15,guard-block,真实 exec 被 E03 阻断,PASS,ACTUAL_RUN,audit 09:16:05 block admitted-tray;命令未执行
 G2-16,desktop,Desktop 会话 hook 全事件触发,PASS,ACTUAL_RUN,catnip-pram obs=54;audit 全天时间戳
 G2-17,ops,doctor+备份+回滚,PASS,ACTUAL_RUN,3pass/1warn; bak-20261115 在案; ROLLBACK.md
+G2-18,rollback,文档自身含宽匹配杀进程违例,PASS_FIXED,ACTUAL_RUN,agentmemory stop+lsof端口归属替代
+G2-19,sandbox,cwd前缀+符号链接逃逸,PASS_FIXED,ACTUAL_RUN,realpath+base+sep边界; evil目录/逃逸链接均拒
+G2-20,guard-block,ACP会话真实exec被E03阻断,PASS,ACTUAL_RUN,elegant-buckthorn audit 09:32:17;无permission先到hook deny
+G2-21,guard-fp,E05预执行计verify+E01误伤commit,PASS_FIXED,ACTUAL_RUN,PostToolUse成功+SHA输出才算verified;E01-EXEC须权限请求上下文;15/15
+G2-22,lesson-restore,临时删除后恢复全局lesson,PASS,ACTUAL_RUN,lsn_ddbc47a351659b4f 已重新入库

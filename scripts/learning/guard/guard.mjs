@@ -59,12 +59,13 @@ function classifyToolEvent(evt) {
   const name = evt.tool_name || "";
   const input = evt.tool_input || {};
   const cmd = typeof input.command === "string" ? input.command : "";
-  if (evt.hook_event_name === "PreToolUse" && cmd) {
-    if (VERIFY_RE.test(cmd)) return "verified-remote";
-    if (PUSH_RE.test(cmd)) return "pushed";
-  }
   if (evt.hook_event_name === "PostToolUse") {
     const out = String(evt.tool_response?.output ?? "") + String(evt.tool_response?.error ?? "");
+    const ok = evt.tool_response?.success !== false;
+    // Delivery signals only count on observed success, not on command intent.
+    if (PUSH_RE.test(cmd) && ok && !/(rejected|error:|fatal:|failed)/i.test(out)) return "pushed";
+    // ls-remote must return a real ref SHA to count as verification.
+    if (VERIFY_RE.test(cmd) && ok && /[0-9a-f]{7,40}\s/.test(out)) return "verified-remote";
     if (TEST_CMD_RE.test(cmd)) {
       if (evt.tool_response?.success === false || FAIL_OUT_RE.test(out)) return "test-failed";
       if (PASS_OUT_RE.test(out)) return "test-passed";
