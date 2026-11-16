@@ -82,3 +82,44 @@ e2e 场景(临时 HOME,未触碰真实 `~/.config/devin/config.json`):
 - 未更新 PR #3 或其他冻结分支
 - 未做真实 Devin Desktop UAT(按指示停在
   `NEEDS_OWNER_CONFIG_APPROVAL / OWNER_DESKTOP_UAT`)
+
+## 真实部署记录 (2026-11-16, OWNER 批准后执行 — ACTUAL_RUN)
+
+**批准范围**: 仅 4 条 agent-learning hook 命令改写; agentmemory 6 条与
+其他项目不动。执行前先验证安装 bundle 与 reviewed HEAD 逐字节一致:
+
+| 文件 | sha256(前16) | 与 scripts/ 源一致 |
+|---|---|---|
+| bin/guard.mjs | 1c9e64035216205b | ✔ (含 PR#7 exit-1 加固: readSignals/emit try-catch) |
+| bin/policy.json | 7f2a356db222e3fb | ✔ |
+| bin/session-context.mjs | 3987e9b4d2dd4774 | ✔ |
+
+`--apply` 结果: `4 command(s) updated atomically`, 备份
+`~/.config/devin/config.json.bak.20261116072852`, 写后逐条校验通过。
+变更清单与 dry-run 预览完全一致 (SessionStart[1], PreToolUse[0],
+PostToolUse[0], Stop[0]); agentmemory 6 条 skip 未动。部署后
+`rg agent-remote-poc config.json` 零匹配。
+
+**部署后逐事件实测** (均经新 shim 路径):
+
+| 事件 | 输入 | 结果 |
+|---|---|---|
+| PreToolUse | `pkill -f python` | `decision:block` + E03 reason ✔ |
+| PreToolUse | `ls -la` | exit 0 放行 ✔ |
+| Stop | 常规事件 | **exit 0** (原 exit-1 bug 消除) ✔ |
+| SessionStart | cwd=/tmp | lesson 召回 JSON 正常返回 ✔ |
+| health.json | — | `status:ok, target:bin/` (主 checkout 在
+dsh-remote 分支无 learning/, 正确落到 bin 兜底 — 跨分支韧性实证) |
+
+**P0 追加修复** (owner review of e7b6e3c 前一轮发现):
+
+- 跨 worktree 匹配漏洞: `cmd.includes(REPO)` 会跳过指向其他 checkout
+  的真实 hook 并假成功 — 已改为按 `scripts/learning/` 相对路径签名匹配;
+  新回归测试 "install from worktree B migrates worktree A hooks" 覆盖。
+- `repo-root` 指针经 `git-common-dir` 解析到主工作树, worktree 删除不死。
+- dry-run 默认打印真实逐条 diff (原为通用文案); config 缺失降级为 note。
+- 测试: **36/36** (guard 17 + shim 9 + e2e 6 + project-key 4)。
+
+**剩余人工验收**: 两个全新 Desktop Session 不再出现
+`Hook failed`, AgentMemory 召回不受影响 — OWNER_DESKTOP_UAT。
+回滚路径: `install-shim.sh --rollback` 恢复最新 .bak。
