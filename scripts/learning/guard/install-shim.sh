@@ -20,13 +20,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"   # <repo>/scripts/learning/guard -> <repo>
+REPO_ROOT="$SCRIPT_DIR/../../.."                  # placeholder; resolved below
+# When the installer runs inside a linked worktree (e.g. /private/tmp/al-fix),
+# the recorded repo-root must be the MAIN working tree, not the disposable
+# worktree — otherwise the shim's live-checkout pointer dies with the worktree.
+# git-common-dir of a worktree resolves to <main>/.git; of a main checkout to
+# <self>/.git, so dirname() is the main working tree in both cases.
+GIT_COMMON="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+if [[ -n "$GIT_COMMON" ]]; then
+  MAIN_ROOT="$(cd "$(dirname "$GIT_COMMON")" && pwd 2>/dev/null || true)"
+  [[ -n "$MAIN_ROOT" ]] && REPO_ROOT="$MAIN_ROOT"
+fi
 GUARD_DIR="${AGENT_GUARD_DIR:-$HOME/.agent-learning/guard}"
 SHIM_DST="$GUARD_DIR/hook-shim.mjs"
 CONFIG="${AGENT_DEVIN_CONFIG:-$HOME/.config/devin/config.json}"
+ORIGIN_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"  # checkout the installer runs from (may be a worktree)
 SRC_GUARD="$SCRIPT_DIR/guard.mjs"
 SRC_POLICY="$SCRIPT_DIR/policy.json"
-SRC_CTX="$REPO_ROOT/scripts/learning/session-context.mjs"
+SRC_CTX="$ORIGIN_ROOT/scripts/learning/session-context.mjs"
 SRC_SHIM="$SCRIPT_DIR/hook-shim.mjs"
 
 for f in "$SRC_GUARD" "$SRC_POLICY" "$SRC_CTX" "$SRC_SHIM"; do
@@ -68,22 +79,26 @@ NEW_STOP="node $SHIM_DST scripts/learning/guard/guard.mjs"
 NEW_CTX="node $SHIM_DST scripts/learning/session-context.mjs"
 echo
 echo "Required config.json changes (OWNER approval needed):"
-echo "  commands containing <REPO>/scripts/learning/guard/guard.mjs       -> \"$NEW_STOP\""
-echo "  commands containing <REPO>/scripts/learning/session-context.mjs -> \"$NEW_CTX\""
+echo "  commands matching scripts/learning/guard/guard.mjs       -> \"$NEW_STOP\""
+echo "  commands matching scripts/learning/session-context.mjs -> \"$NEW_CTX\""
 
-if [[ "${1:-}" == "--apply" ]]; then
-  NEW_STOP="$NEW_STOP" NEW_CTX="$NEW_CTX" CONFIG="$CONFIG" REPO_ROOT="$REPO_ROOT" node - <<'NODE'
+# Dry-run by default: compute and print the EXACT per-entry diff against the
+# real config without writing. --apply performs the same computation, then
+# backs up, writes atomically and re-verifies. A missing config is not an
+# error — the bundle still installs and the diff step reports it.
+if [[ ! -f "$CONFIG" ]]; then
+  echo "note: $CONFIG not found — bundle installed; no hook diff to compute"
+  exit 0
+fi
+MODE="dry"; [[ "${1:-}" == "--apply" ]] && MODE="apply"
+NEW_STOP="$NEW_STOP" NEW_CTX="$NEW_CTX" CONFIG="$CONFIG" MODE="$MODE" node - <<'NODE'
 const fs = require("node:fs");
-const cp = require("node:child_process");
-const os = require("node:os");
-const p = require("node:path");
-const CONFIG = process.env.CONFIG, REPO = process.env.REPO_ROOT;
+const CONFIG = process.env.CONFIG, MODE = process.env.MODE;
 const NEW = { "guard/guard.mjs": process.env.NEW_STOP, "session-context.mjs": process.env.NEW_CTX };
 
 const raw = fs.readFileSync(CONFIG, "utf8");
 const cfg = JSON.parse(raw);
 const changed = [], skipped = [];
-const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const relRe = /scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
 
 for (const [evt, arr] of Object.entries(cfg.hooks || {})) {
@@ -93,11 +108,14 @@ for (const [evt, arr] of Object.entries(cfg.hooks || {})) {
       const cmd = h.command || "";
       const m = cmd.match(relRe);
       if (!m) { skipped.push(`${evt}[${i}].hooks[${j}]: no learning-hook command`); return; }
-      // only rewrite commands that reference THIS repo's checkout or our shim
-      if (!cmd.includes(REPO) && !cmd.includes("hook-shim.mjs")) {
-        skipped.push(`${evt}[${i}].hooks[${j}]: foreign path, untouched: ${cmd}`);
-        return;
-      }
+      // PR#7 P0 fix: the learning-hook signature IS the relative path
+      // scripts/learning/{guard/guard.mjs,session-context.mjs}. The absolute
+      // prefix is incidental — it may be this checkout, the main working tree,
+      // or a DELETED linked worktree (the original bug matched only the
+      // installer's own checkout path, so cross-worktree hooks were skipped
+      // and --apply returned a false success). Any match is an agent-learning
+      // hook and is repointed to the stable shim. Non-matching commands
+      // (agentmemory, other tools) are never touched.
       const want = NEW[m[1].includes("guard") ? "guard/guard.mjs" : "session-context.mjs"];
       if (cmd === want) { skipped.push(`${evt}[${i}].hooks[${j}]: already installed`); return; }
       h.command = want;
@@ -106,7 +124,13 @@ for (const [evt, arr] of Object.entries(cfg.hooks || {})) {
   });
 }
 if (!changed.length) {
-  console.log("apply: no matching entries changed (idempotent or nothing to do)");
+  console.log(`${MODE}: no matching entries changed (idempotent or nothing to do)`);
+  skipped.forEach(s => console.log("  skip:", s));
+  process.exit(0);
+}
+if (MODE === "dry") {
+  console.log(`dry-run: ${changed.length} command(s) WOULD change (no write performed):`);
+  changed.forEach(c => console.log(`  ${c.path}\n    - ${c.from}\n    + ${c.to}`));
   skipped.forEach(s => console.log("  skip:", s));
   process.exit(0);
 }
@@ -133,7 +157,7 @@ changed.forEach(c => console.log(`  ${c.path}\n    - ${c.from}\n    + ${c.to}`))
 console.log("backup:", bak);
 skipped.forEach(s => console.log("  skip:", s));
 NODE
-else
+if [[ "${1:-}" != "--apply" ]]; then
   echo
   echo "Not applying. Re-run with --apply after OWNER approves the diff above."
 fi

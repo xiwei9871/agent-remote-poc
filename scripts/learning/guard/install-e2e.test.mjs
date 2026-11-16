@@ -40,7 +40,12 @@ test("install: full runnable bundle lands in user dir, manifest pinned", () => {
   const man = JSON.parse(readFileSync(join(GUARD_DIR, "manifest.json"), "utf8"));
   if (Object.keys(man.files).length !== 4) throw new Error("manifest incomplete");
   const root = readFileSync(join(GUARD_DIR, "repo-root"), "utf8").trim();
-  const expected = dirname(dirname(dirname(GDIR))); // <repo>/scripts/learning/guard -> <repo>
+  const origin = dirname(dirname(dirname(GDIR))); // <repo>/scripts/learning/guard -> <repo>
+  // PR#7 P0: pointer must resolve to the MAIN working tree (survives worktree
+  // deletion), not the possibly-temporary checkout the installer ran from.
+  const gc = spawnSync("git", ["-C", origin, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { encoding: "utf8" });
+  const expected = gc.status === 0 ? dirname(gc.stdout.trim()) : origin;
   if (root !== expected || root.endsWith("/scripts"))
     throw new Error(`repo-root wrong: ${root} (expected ${expected})`);
 });
@@ -107,4 +112,61 @@ test("--apply: only repo-learning commands rewritten; idempotent; rollback", () 
   const restored = JSON.parse(readFileSync(CONFIG, "utf8"));
   if (restored.hooks.PreToolUse[0].hooks[0].command !== cfg.hooks.PreToolUse[0].hooks[0].command)
     throw new Error("rollback did not restore original command");
+});
+
+test("PR#7 P0: install from worktree B migrates hooks pointing at worktree A", () => {
+  // Regression for the real-world failure: config commands referenced the
+  // MAIN checkout /Users/xiwei/agent-remote-poc while the installer ran from
+  // a linked worktree /private/tmp/al-fix. The old cmd.includes(REPO) gate
+  // skipped every hook and --apply exited 0 having changed nothing.
+  const CHECKOUT_A = join(ROOT, "checkout-A");       // main checkout path
+  mkdirSync(join(CHECKOUT_A, "scripts", "learning", "guard"), { recursive: true });
+  mkdirSync(dirname(CONFIG), { recursive: true });
+  const cfg = {
+    hooks: {
+      SessionStart: [
+        { hooks: [{ type: "command", command: "node /agentmemory/session-start.mjs" }] },
+        { hooks: [{ type: "command", command: `node ${CHECKOUT_A}/scripts/learning/session-context.mjs`, timeout: 5 }] }],
+      PreToolUse: [
+        { matcher: "exec", hooks: [{ type: "command", command: `node ${CHECKOUT_A}/scripts/learning/guard/guard.mjs`, timeout: 5 }] },
+        { matcher: ".*", hooks: [{ type: "command", command: "node /agentmemory/pre-tool-use.mjs" }] }],
+      Stop: [
+        { hooks: [{ type: "command", command: `node ${CHECKOUT_A}/scripts/learning/guard/guard.mjs`, timeout: 5 }] },
+        { hooks: [{ type: "command", command: "node /agentmemory/stop.mjs" }] }] } };
+  writeFileSync(CONFIG, JSON.stringify(cfg, null, 2));
+
+  // installer runs from GDIR (a DIFFERENT root than CHECKOUT_A)
+  const r = bash([INSTALLER, "--apply"]);
+  if (r.status !== 0) throw new Error(`--apply failed: ${r.stderr}`);
+  if (!/apply: 3 command\(s\) updated/.test(r.stdout))
+    throw new Error(`expected 3 migrated commands, got: ${r.stdout}`);
+  const SHIM = join(GUARD_DIR, "hook-shim.mjs");
+  const after = JSON.parse(readFileSync(CONFIG, "utf8"));
+  if (after.hooks.PreToolUse[0].hooks[0].command !== `node ${SHIM} scripts/learning/guard/guard.mjs`)
+    throw new Error("worktree-A guard hook not migrated to shim");
+  if (after.hooks.Stop[0].hooks[0].command !== `node ${SHIM} scripts/learning/guard/guard.mjs`)
+    throw new Error("worktree-A Stop hook not migrated");
+  if (after.hooks.SessionStart[1].hooks[0].command !== `node ${SHIM} scripts/learning/session-context.mjs`)
+    throw new Error("worktree-A session-context hook not migrated");
+  // foreign (agentmemory) hooks untouched
+  if (!after.hooks.SessionStart[0].hooks[0].command.includes("agentmemory"))
+    throw new Error("foreign SessionStart hook modified");
+  if (!after.hooks.PreToolUse[1].hooks[0].command.includes("agentmemory"))
+    throw new Error("foreign PreToolUse hook modified");
+  if (!after.hooks.Stop[1].hooks[0].command.includes("agentmemory"))
+    throw new Error("foreign Stop hook modified");
+});
+
+test("PR#7 P0: dry-run reports the real diff and writes nothing", () => {
+  const CHECKOUT_A = join(ROOT, "checkout-A");
+  mkdirSync(dirname(CONFIG), { recursive: true });
+  const cfg = { hooks: { Stop: [
+    { hooks: [{ type: "command", command: `node ${CHECKOUT_A}/scripts/learning/guard/guard.mjs` }] }] } };
+  writeFileSync(CONFIG, JSON.stringify(cfg, null, 2));
+  const r = bash([INSTALLER]);                        // no --apply
+  if (r.status !== 0) throw new Error(`dry-run failed: ${r.stderr}`);
+  if (!/dry-run: 1 command\(s\) WOULD change/.test(r.stdout))
+    throw new Error(`dry-run did not report real diff: ${r.stdout}`);
+  const after = readFileSync(CONFIG, "utf8");
+  if (!after.includes(CHECKOUT_A)) throw new Error("dry-run modified the config!");
 });
