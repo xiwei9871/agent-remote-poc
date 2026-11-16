@@ -1,0 +1,18 @@
+id,gate,case,status,evidence_kind,note
+G2-A01,auth,Host deviceId+fingerprint 一致性,PASS,ACTUAL_RUN,47C2 3346 AA7C 未漂移; device.json 只读核验
+G2-A02,auth,ACCOUNT_AUTH_REQUIRED 401 消除,PASS,ACTUAL_RUN,host.log: connection online×3 + status authorized:true
+G2-A03,auth,配对链接网页端完成,FAIL_PATH,ACTUAL_RUN,/pair 页仅提示手机扫码;无网页完成按钮
+G2-A04,auth,dsh-Go 扫码配对,BLOCKED_CLIENT,OWNER_VERIFIED,按钮灰置:需 DeepSeek 登录+手机本地引擎
+G2-A05,auth,一次性主机注册码授权,PASS,ACTUAL_RUN,host.registration-code.submit → authorized + online
+G2-A06,auth,三条授权链区分,PASS,STATIC,Provider/Devin-ACP/Remote 服务账号互独立(见 AUTH_AND_PAIRING)
+G2-B01,web,设备列表可见在线 Host,PASS,OWNER_VERIFIED,截图:绿点在线+已连接 LAN
+G2-B02,web,工作区/会话列表可见,PASS_PARTIAL,OWNER_VERIFIED,default-workspace→未命名会话 列出;打开内容待确认
+G2-B03,web,W02 Web 追加消息续接,NOT_TESTED,-,待 Owner 打开会话后实测
+G2-B04,web,W03 审批 approve/deny,NOT_TESTED,-,合成 fixture 待跑
+G2-B05,web,W05 断线重连恢复,NOT_TESTED,-,
+G2-C01,android,dsh-Go 同账号连接 Host,NOT_TESTED,-,Owner 真机操作
+G2-C02,android,手机追加指令到既有会话,NOT_TESTED,-,
+G2-C03,android,手机审批/拒绝,NOT_TESTED,-,
+G2-C04,android,断网恢复历史不丢,NOT_TESTED,-,
+G2-D01,process,无 pkill -f/批量 kill,PASS,ACTUAL_RUN,SIGTERM+PID 属主核验
+G2-D02,privacy,无 token/凭据入档,PASS,ACTUAL_RUN,仅脱敏状态/指纹/方法名

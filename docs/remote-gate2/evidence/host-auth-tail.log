@@ -1,0 +1,8 @@
+2026-11-16T04:10:34.158Z [INFO] [ds-harness-remote] ACP call received {"method":"dsh/sessionList"}
+2026-11-16T04:10:34.194Z [INFO] [ds-harness-remote] host rpc ok {"method":"agent.acp.call","subMethod":"dsh/sessionList","durationMs":36}
+2026-11-16T04:10:34.197Z [INFO] [ds-harness-remote] ACP call received {"method":"dsh/sessionList"}
+2026-11-16T04:10:34.207Z [INFO] [ds-harness-remote] host rpc ok {"method":"agent.acp.call","subMethod":"dsh/sessionList","durationMs":11}
+2026-11-16T04:10:34.210Z [INFO] [ds-harness-remote] ACP call received {"method":"dsh/sessionList"}
+2026-11-16T04:10:34.224Z [INFO] [ds-harness-remote] host rpc ok {"method":"agent.acp.call","subMethod":"dsh/sessionList","durationMs":14}
+2026-11-16T04:10:34.226Z [INFO] [ds-harness-remote] ACP call received {"method":"dsh/sessionList"}
+2026-11-16T04:10:34.450Z [INFO] [ds-harness-remote] host rpc ok {"method":"agent.acp.call","subMethod":"dsh/sessionList","durationMs":225}
