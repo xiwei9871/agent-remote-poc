@@ -36,7 +36,9 @@ function readSignals(sessionId) {
   const p = sessionLog(sessionId);
   const sig = { pushed: false, verified: false, testFailed: false, testPassedAfter: false, deliverClaim: false };
   if (!existsSync(p)) return sig;
-  for (const line of readFileSync(p, "utf8").split("\n")) {
+  let lines;
+  try { lines = readFileSync(p, "utf8").split("\n"); } catch { return sig; }
+  for (const line of lines) {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
@@ -111,7 +113,9 @@ function matchRule(rule, evt) {
   return false;
 }
 
-function emit(obj) { process.stdout.write(JSON.stringify(obj)); }
+function emit(obj) {
+  try { process.stdout.write(JSON.stringify(obj)); } catch (e) { audit({ kind: "internal-error", where: "emit", error: String(e).slice(0, 300) }); }
+}
 
 async function main() {
   let input = "";
@@ -149,4 +153,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { audit({ error: String(e) }); process.exit(0); });
+main().catch((e) => { audit({ kind: "internal-error", error: String(e).slice(0, 500) }); process.exit(0); });

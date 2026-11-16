@@ -2,7 +2,7 @@
 // Run: node --test scripts/learning/guard/guard.test.mjs
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,4 +134,20 @@ test("benign exec passes silently", () => {
 test("malformed input exits cleanly", () => {
   const r = spawnSync("node", [GUARD], { input: "not json", env: { ...process.env, AGENT_GUARD_DIR: DIR }, encoding: "utf8" });
   if (r.status !== 0) throw new Error(`expected exit 0, got ${r.status}`);
+});
+
+test("missing/corrupt policy.json exits 0 and audits internal-error (Issue #6)", () => {
+  for (const bad of [join(DIR, "no-such-policy.json"), null]) {
+    let p = bad;
+    if (!p) { p = join(DIR, "corrupt-policy.json"); writeFileSync(p, "{not json"); }
+    const sub = join(DIR, `aud-${p.endsWith("corrupt-policy.json") ? "corrupt" : "missing"}`);
+    const r = spawnSync("node", [GUARD], {
+      input: JSON.stringify({ session_id: "pol", hook_event_name: "Stop", tool_input: {} }),
+      env: { ...process.env, AGENT_GUARD_DIR: sub, AGENT_GUARD_POLICY: p },
+      encoding: "utf8", timeout: 10000,
+    });
+    if (r.status !== 0) throw new Error(`expected exit 0 with bad policy, got ${r.status}`);
+    const log = readFileSync(join(sub, "audit.jsonl"), "utf8");
+    if (!log.includes("internal-error")) throw new Error(`expected internal-error audit, got ${log}`);
+  }
 });
