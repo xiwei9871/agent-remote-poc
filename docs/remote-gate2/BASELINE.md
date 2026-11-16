@@ -37,3 +37,15 @@ Remote Web 侧可见 `default-workspace → 未命名会话`（Owner 截图证�
 `GET /api/v1/auth/oauth/providers`：
 `devicePairing=dsh-pairing-v1`、`devicePairingQr=fragment-ticket-v1`；
 OAuth：知乎/GitHub/Google（含 qrStartUrl）。
+
+## 模型与 Provider 配置（2026-11-16 ACTUAL_RUN）
+
+| 后端 | 配置 | 状态 |
+| --- | --- | --- |
+| DSH 默认模型 | `shenlan/gpt-6.1-sol`（pi-ai → https://www.shenlanqaq.com/v1，openai-completions） | **已生效**：cordis.patch.yml 修正 name 定向覆盖（原 deepseek-flash 顶掉 shenlan），`--dump-config` 验证；进程 env 含 SHENLAN_API_KEY |
+| Codex | `codex-home/config.toml`：model_provider=shenlan, model=gpt-6.1-sol, wire_api=responses | 已配好（沿用上轮）；Remote domain ready |
+| Claude ACP | `claude-agent-acp@0.23.1` 已接入 backends | **BLOCKED_PROVIDER**：shenlan Anthropic 路由 claude-pro 组 403；z.ai 429 余额不足。网关侧开通前不可用 |
+
+- Host 重启验证：SIGTERM→带 env 重启（PID 79245），server control connection
+  于 04:21:55 自动恢复 online——**授权随重启持久**（server-credentials.json 生效）。
+- 未做真实任务验证（W02 会话内执行待 Web/手机触发）。

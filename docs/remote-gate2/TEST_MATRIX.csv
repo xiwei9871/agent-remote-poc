@@ -16,3 +16,7 @@ G2-C03,android,手机审批/拒绝,NOT_TESTED,-,
 G2-C04,android,断网恢复历史不丢,NOT_TESTED,-,
 G2-D01,process,无 pkill -f/批量 kill,PASS,ACTUAL_RUN,SIGTERM+PID 属主核验
 G2-D02,privacy,无 token/凭据入档,PASS,ACTUAL_RUN,仅脱敏状态/指纹/方法名
+G2-B06,model,默认模型切shenlan/gpt-6.1-sol,PASS,ACTUAL_RUN,patch name定向覆盖修复;dump-config+进程env验证
+G2-B07,model,Host重启后授权保持,PASS,ACTUAL_RUN,PID79245 connection online 04:21:55
+G2-D03,provider,Claude shenlan路由可用性,BLOCKED_PROVIDER,ACTUAL_RUN,claude-pro组403;z.ai 429;不动用户代理配置
+G2-D04,provider,Codex配置=shenlan,PASS,STATIC,config.toml已配;待会话内实测
