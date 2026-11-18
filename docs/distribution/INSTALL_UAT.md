@@ -55,3 +55,13 @@ cd agent-learning-macos
 | `hook None/exit1` 上游 WARN | `UNATTRIBUTED_DEVIN_INTERNAL` | 与本包无关有实证；doctor 会如实披露不隐瞒 |
 | 自动纠错→自发持久化 | `NOT_VERIFIED` | 实验功能，Stable 不含 |
 | Intel / Codex / Claude / Devin Cloud | `NOT_TESTED/UNSUPPORTED` | 不承诺 |
+
+## 第二轮 P0 整改（复审 R2）
+
+| 整改 | 实测 |
+| --- | --- |
+| Skills 所有权完整化 | 重装遇用户修改 → 挪为 `.user-modified-*` 不覆盖；卸载仅删 SKILL.md+标记（其他文件保留），空目录才移除；外来 skill 的 `.pre-agent-learning-*` 备份在卸载时**恢复原位** |
+| 回滚身份唯一性 | repoint ops 按序逐 hook 配对（`consumed` per-hook），两个旧路径映射同一 shim 后**分别恢复各自原命令**；add ops 用条目快照深比较，不误删用户后加的同名条目 |
+| AgentMemory 回滚 | connect 前快照 + `connect-changes.json` 记录新增钩/mcpServers；无 agentmemory 的机器回滚后 6 钩与 MCP 全部移除 |
+| Doctor 严格化 | 6 条 agentmemory 钩**逐事件**核对（缺一即 FAIL）；e2e 断言该 PASS 行 |
+| 测试规模 | 16/16（新增 4 个 R2 反例：双旧钩分别恢复、其他文件保留+外来恢复、重装不覆盖修改、无 AM 机器全量回滚） |

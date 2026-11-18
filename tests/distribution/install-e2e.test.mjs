@@ -32,7 +32,7 @@ case "$1" in
     c.mcpServers={...(c.mcpServers||{}),agentmemory:{command:"npx",args:["-y","@agentmemory/mcp"]}};
     c.hooks=c.hooks||{};
     const ev={UserPromptSubmit:"prompt-submit",PreToolUse:"pre-tool-use",PostToolUse:"post-tool-use",Stop:"stop",SessionEnd:"session-end",SessionStart:"session-start"};
-    for(const[e,s]of Object.entries(ev)){(c.hooks[e]=c.hooks[e]||[]).push({hooks:[{type:"command",command:"node /am/plugin/scripts/"+s+".mjs"}]});}
+    for(const[e,s]of Object.entries(ev)){(c.hooks[e]=c.hooks[e]||[]).push({hooks:[{type:"command",command:"node /am/lib/node_modules/@agentmemory/agentmemory/plugin/scripts/"+s+".mjs"}]});}
     fs.writeFileSync(p,JSON.stringify(c,null,2));
   ';;
 esac
@@ -86,6 +86,8 @@ test("doctor: PASS or PARTIAL only (no FAIL) on healthy install", () => {
   if (r.status === 1) throw new Error(`doctor FAIL:\n${r.stdout}`);
   if (!/RESULT: (PASS|PARTIAL)/.test(r.stdout)) throw new Error(`bad doctor output: ${r.stdout}`);
   if (!/E03 block works/.test(r.stdout)) throw new Error("doctor did not verify E03");
+  if (!/agentmemory 6 capture hooks registered/.test(r.stdout))
+    throw new Error("doctor did not verify all 6 agentmemory hooks per-event");
 });
 
 test("doctor FAILs on corrupted bundle (hash mismatch detected)", () => {
@@ -117,11 +119,12 @@ test("P0-A: pre-existing foreign skill is backed up, not overwritten/deleted", (
   if (!existsSync(join(foreign, ".agent-learning-owned"))) throw new Error("ownership marker missing");
   if (!readdirSync(SKILLS).some(f => f.startsWith("memory-recall.pre-agent-learning-")))
     throw new Error("foreign skill not backed up");
-  // uninstall must NOT delete the foreign skill's backup and must restore nothing foreign
+  // uninstall restores the colleague's own version at the original path
   const r2 = sh("uninstall.sh");
   if (r2.status !== 0) throw new Error("uninstall failed");
-  if (!readdirSync(SKILLS).some(f => f.startsWith("memory-recall.pre-agent-learning-")))
-    throw new Error("foreign skill backup deleted by uninstall!");
+  if (!existsSync(join(foreign, "SKILL.md"))) throw new Error("skill dir gone after uninstall");
+  if (!readFileSync(join(foreign, "SKILL.md"), "utf8").includes("colleague's own"))
+    throw new Error("colleague's own skill not restored at original path");
 });
 
 test("P0-B: rollback preserves hooks/MCP added AFTER install (differential)", () => {
@@ -162,6 +165,70 @@ test("P0-C: --purge-data refuses without typed confirmation", () => {
     { env: { ...env(), CONFIRM_PURGE: "DELETE-DATA" }, encoding: "utf8" });
   if (r2.status !== 0) throw new Error("confirmed purge failed");
   if (existsSync(join(HOME, ".agentmemory"))) throw new Error("purge did not run after confirmation");
+});
+
+test("P0-R2: two stale hooks -> same shim -> rollback restores EACH original", () => {
+  // real scripts at two different checkouts so repoint is restorable
+  const A = join(ROOT, "wt-A", "scripts", "learning", "guard");
+  const B = join(ROOT, "wt-B", "scripts", "learning", "guard");
+  mkdirSync(A, { recursive: true }); mkdirSync(B, { recursive: true });
+  writeFileSync(join(A, "guard.mjs"), "// A"); writeFileSync(join(B, "guard.mjs"), "// B");
+  const c = cfg();
+  c.hooks.Stop = [
+    { hooks: [{ type: "command", command: `node ${ROOT}/wt-A/scripts/learning/guard/guard.mjs` }] },
+    { hooks: [{ type: "command", command: `node ${ROOT}/wt-B/scripts/learning/guard/guard.mjs` }] }];
+  writeFileSync(CONFIG, JSON.stringify(c, null, 2));
+  if (sh("install.sh", ["--yes"]).status !== 0) throw new Error("install failed");
+  if (sh("rollback.sh").status !== 0) throw new Error("rollback failed");
+  const stops = cfg().hooks.Stop.flatMap(e => (e.hooks || []).map(h => h.command));
+  if (!stops.includes(`node ${ROOT}/wt-A/scripts/learning/guard/guard.mjs`)) throw new Error("wt-A original not restored");
+  if (!stops.includes(`node ${ROOT}/wt-B/scripts/learning/guard/guard.mjs`)) throw new Error("wt-B original not restored — mapped to wrong/shim command");
+});
+
+test("P0-R2: reinstall never overwrites a user-modified skill", () => {
+  const dst = join(SKILLS, "self-repair");
+  writeFileSync(join(dst, "SKILL.md"), "# user's edited self-repair\n");
+  const r = sh("install.sh", ["--yes"]);
+  if (r.status !== 0) throw new Error("reinstall failed");
+  if (!readdirSync(SKILLS).some(f => f.startsWith("self-repair.user-modified-")))
+    throw new Error("modified skill not preserved aside");
+  if (readFileSync(join(dst, "SKILL.md"), "utf8").includes("user's edited"))
+    throw new Error("still showing user content — not refreshed? check marker");
+});
+
+test("P0-R2: uninstall keeps colleague's extra files and restores own skill", () => {
+  // user-modified self-repair is currently installed; give it an extra file
+  writeFileSync(join(SKILLS, "self-repair", "notes.md"), "colleague notes");
+  // make memory-recall foreign again with extra file
+  const mr = join(SKILLS, "memory-recall");
+  rmSync(mr, { recursive: true, force: true }); mkdirSync(mr, { recursive: true });
+  writeFileSync(join(mr, "SKILL.md"), "# colleague's own\n");
+  writeFileSync(join(mr, "extra.md"), "keep me");
+  if (sh("install.sh", ["--yes"]).status !== 0) throw new Error("install failed");
+  const r = sh("uninstall.sh");
+  if (r.status !== 0) throw new Error("uninstall failed");
+  // memory-recall: foreign backup restored at original path incl. extra file
+  if (!existsSync(join(mr, "extra.md"))) throw new Error("colleague extra file lost");
+  if (!readFileSync(join(mr, "SKILL.md"), "utf8").includes("colleague's own"))
+    throw new Error("colleague's own SKILL.md not restored");
+  // self-repair (user-modified) moved aside, not deleted
+  if (!readdirSync(SKILLS).some(f => f.startsWith("self-repair.user-modified-")))
+    throw new Error("user-modified skill dir deleted");
+});
+
+test("P0-R2: rollback on a no-agentmemory machine removes ALL connect changes", () => {
+  const HOME4 = join(ROOT, "home4"); mkdirSync(HOME4, { recursive: true });
+  const e4 = { ...process.env, HOME: HOME4, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(HOME4, ".agent-learning") };
+  const run = (s, a = []) => spawnSync("bash", [join(PKG, s), ...a], { env: e4, encoding: "utf8", timeout: 30000 });
+  if (run("install.sh", ["--yes"]).status !== 0) throw new Error("fresh install failed");
+  const c4 = () => JSON.parse(readFileSync(join(HOME4, ".config", "devin", "config.json"), "utf8"));
+  if (!c4().mcpServers?.agentmemory) throw new Error("connect did not write mcpServers (stub path)");
+  if (run("rollback.sh").status !== 0) throw new Error("rollback failed");
+  const after = c4();
+  if (after.mcpServers?.agentmemory) throw new Error("agentmemory MCP left after rollback");
+  const leftover = Object.values(after.hooks || {}).flat().flatMap(e => (e.hooks || []).map(h => h.command || ""))
+    .filter(c => /agentmemory|scripts\/learning|agent-learning\/guard/.test(c));
+  if (leftover.length) throw new Error(`hooks left after full rollback: ${leftover}`);
 });
 
 test("P0-F: lifecycle works from the shipped tar.gz, not just the source tree", () => {

@@ -99,7 +99,35 @@ if [[ $NODEPS -eq 0 ]]; then
   fi
   # --with-hooks is REQUIRED: bare `connect` only writes mcpServers and would
   # leave the 6 agentmemory capture hooks out (verified via --dry-run).
+  # P0-R2: snapshot config BEFORE connect so rollback can undo exactly what
+  # connect added (its 6 hooks + mcpServers) on machines that had none.
+  if [[ $DRY -eq 0 && -f "$DEVIN_CONFIG" ]]; then
+    cp "$DEVIN_CONFIG" "$DEVIN_CONFIG.bak.agentmemory-connect-$(date +%Y%m%d%H%M%S)"
+  fi
   run agentmemory connect devin --with-hooks --force
+  if [[ $DRY -eq 0 && -f "$DEVIN_CONFIG" ]]; then
+    AL_HOME="$AL_HOME" CONFIG="$DEVIN_CONFIG" node - <<'NODE'
+// Record what `connect` just added: hook commands per event + whether the
+// mcpServers.agentmemory key is new (and its value, for exact-restore checks).
+const fs = require("node:fs"), p = require("node:path"), os = require("node:os");
+const C = process.env.CONFIG;
+const bak = fs.readdirSync(p.dirname(C)).filter(f => f.startsWith("config.json.bak.agentmemory-connect-")).sort().pop();
+const before = bak ? JSON.parse(fs.readFileSync(p.join(p.dirname(C), bak), "utf8")) : {};
+const after = JSON.parse(fs.readFileSync(C, "utf8"));
+const addedCmds = {};
+const cmdsOf = o => { const m = new Set(); for (const a of Object.values(o.hooks || {})) (a || []).forEach(en => (en.hooks || []).forEach(h => m.add(h.command || ""))); return m; };
+const b = cmdsOf(before), a = cmdsOf(after);
+for (const [e, arr] of Object.entries(after.hooks || {})) (arr || []).forEach(en => (en.hooks || []).forEach(h => {
+  if (h.command && !b.has(h.command)) (addedCmds[e] = addedCmds[e] || []).push(h.command);
+}));
+const ops = { hookCommands: addedCmds };
+if (!before.mcpServers?.agentmemory && after.mcpServers?.agentmemory)
+  ops.mcpAdded = { key: "agentmemory", value: after.mcpServers.agentmemory };
+const out = p.join(process.env.AGENT_LEARNING_HOME || os.homedir() + "/.agent-learning", "guard", "connect-changes.json");
+fs.mkdirSync(p.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify({ ts: new Date().toISOString(), config: C, backupBefore: bak ? p.join(p.dirname(C), bak) : null, ops }, null, 2) + "\n");
+NODE
+  fi
 fi
 
 ## ---------- 5. stable guard bundle (hash-verified) ----------
@@ -152,7 +180,7 @@ for (const w of WANT) {
   }));
   if (!found) {
     changed.push(`hooks.${w.evt}: add entry (${w.sig})`);
-    ops.push({ op: "add", evt: w.evt, command: CMD[w.sig] });
+    ops.push({ op: "add", evt: w.evt, entry: w.entry });   // snapshot for exact removal
     if (!DRY) cfg.hooks[w.evt].push(w.entry);
   }
 }
@@ -197,16 +225,26 @@ NODE
 # byte-identical installs (user-modified ones are moved aside, not deleted).
 for d in "$HERE"/skills/*/; do
   name="$(basename "$d")"; dst="$DEVIN_SKILLS_DIR/$name"
-  if [[ -d "$dst" && ! -f "$dst/.agent-learning-owned" ]]; then
+  if [[ -d "$dst" && -f "$dst/.agent-learning-owned" ]]; then
+    # P0-R2: ours but user-modified since install → preserve their edit, then
+    # refresh. Never silently overwrite a colleague's modification.
+    recorded="$(cat "$dst/.agent-learning-owned")"
+    current="$(shasum -a256 "$dst/SKILL.md" 2>/dev/null | awk '{print $1}')"
+    if [[ "$current" != "$recorded" ]]; then
+      aside="$dst.user-modified-$(date +%Y%m%d%H%M%S)"
+      warn "skill '$name' was modified after install — preserving it as $aside"
+      run mv "$dst" "$aside"
+    fi
+  elif [[ -d "$dst" ]]; then
     if ! diff -q "$d/SKILL.md" "$dst/SKILL.md" >/dev/null 2>&1; then
       bak="$dst.pre-agent-learning-$(date +%Y%m%d%H%M%S)"
       warn "skill '$name' already exists with different content — backing it up to $bak"
       run cp -R "$dst" "$bak"
     else
-      say "skill '$name' already present with identical content — reusing"
+      # identical foreign skill: adopt nothing, claim nothing — leave it alone
+      say "skill '$name' already present with identical content — left as-is (not ours)"
+      continue
     fi
-  elif [[ -d "$dst" ]]; then
-    say "skill '$name' already installed by this package — refreshing"
   fi
   run mkdir -p "$dst"
   run cp "$d/SKILL.md" "$dst/SKILL.md"

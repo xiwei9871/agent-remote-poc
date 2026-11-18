@@ -49,7 +49,19 @@ case "$CHK_OUT" in
   *shimmed=4*stale=0*) ok "4 learning hooks wired to stable shim";;
   *) bad "learning hooks miswired: $CHK_OUT (expected shimmed=4 stale=0) — re-run install.sh";;
 esac
-case "$CHK_OUT" in *agentmemory_hooks=0*) warnp "no agentmemory hooks in config — run 'agentmemory connect devin'";; esac
+# 3b. agentmemory's own 6 capture hooks — verify per-event, not just a count
+AM_OUT=$(DEVIN_CONFIG="$DEVIN_CONFIG" node - <<'NODE' 2>/dev/null
+const fs=require("node:fs");
+let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}catch{console.log("NA");process.exit(0)}
+const evs=["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","Stop","SessionEnd"];
+const missing=evs.filter(e=>!((cfg.hooks?.[e]||[]).some(en=>(en.hooks||[]).some(h=>/agentmemory/.test(h.command||"")))));
+console.log(missing.length?"missing:"+missing.join(","):"all6");
+NODE
+)
+if [[ "$AM_OUT" == "all6" ]]; then ok "agentmemory 6 capture hooks registered"
+elif [[ "$AM_OUT" == "NA" ]]; then warnp "cannot check agentmemory hooks (no config)"
+elif ! command -v agentmemory >/dev/null; then warnp "agentmemory hooks absent ($AM_OUT) and CLI missing (--no-deps install?)"
+else bad "agentmemory capture hooks missing ($AM_OUT) — run 'agentmemory connect devin --with-hooks'"; fi
 
 # 4. MCP server entry (core for recall) — Devin may keep it in config.json's
 #    mcpServers (newer builds migrate it to mcp_config.json); accept either.

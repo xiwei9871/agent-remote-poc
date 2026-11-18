@@ -41,7 +41,9 @@ fi
 #    our marker are left untouched (they belonged to the colleague already).
 for s in $SKILLS; do
   dst="$DEVIN_SKILLS_DIR/$s"
-  [[ -d "$dst" ]] || continue
+  [[ -d "$dst" ]] || { 
+    # package skill absent but a colleague's pre-agent-learning backup exists?
+    continue; }
   if [[ ! -f "$dst/.agent-learning-owned" ]]; then
     echo "keep: $s (no ownership marker — not installed by this package)"
     continue
@@ -49,10 +51,23 @@ for s in $SKILLS; do
   recorded="$(cat "$dst/.agent-learning-owned")"
   current="$(shasum -a256 "$dst/SKILL.md" 2>/dev/null | awk '{print $1}')"
   if [[ "$current" == "$recorded" ]]; then
-    rm -rf "$dst"; echo "removed: skill $s"
+    # remove ONLY the two files we put there; any other files are the
+    # colleague's and must survive
+    rm -f "$dst/SKILL.md" "$dst/.agent-learning-owned"
+    if [[ -z "$(ls -A "$dst" 2>/dev/null)" ]]; then rmdir "$dst"; fi
+    echo "removed: skill $s (other files left intact)"
   else
-    mv "$dst" "$dst.removed-agent-learning-$(date +%Y%m%d%H%M%S)"
+    mv "$dst" "$dst.user-modified-$(date +%Y%m%d%H%M%S)"
     echo "moved aside: skill $s (modified since install — preserved, not deleted)"
+  fi
+  # restore the colleague's own version if install had backed it up
+  bak="$(ls -1dt "$DEVIN_SKILLS_DIR/$s".pre-agent-learning-* 2>/dev/null | head -1 || true)"
+  if [[ -n "$bak" && ! -d "$dst" ]]; then
+    mv "$bak" "$dst"
+    echo "restored: your own skill $s (from backup)"
+  elif [[ -n "$bak" && -d "$dst" && ! -f "$dst/SKILL.md" ]]; then
+    cp "$bak/SKILL.md" "$dst/SKILL.md" 2>/dev/null || true
+    echo "restored: your own $s/SKILL.md (backup dir kept at $bak)"
   fi
 done
 rm -rf "$GUARD_DIR"

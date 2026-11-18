@@ -30,3 +30,7 @@ P0-C,purge protection,--purge-data须打字DELETE-DATA确认,PASS,e2e P0-C test
 P0-D,real agentmemory wiring,真二进制connect --with-hooks验证6钩+MCP写入,PASS,ACTUAL_RUN 隔离HOME: mcpServers.agentmemory + 6 hooks(SessionStart/UserPromptSubmit/Pre/Post/Stop/SessionEnd)
 P0-E,doctor reliability,无rg依赖;核心故障FAIL不蒙混,PASS,e2e doctor-corruption test
 P0-F,tarball lifecycle,从最终tar.gz解压走完整生命周期,PASS,e2e P0-F test on shipped artifact
+P0-R2a,skill ownership complete,重装不覆盖用户修改/卸载仅删本包文件且恢复外来skill,PASS,e2e P0-A + 3×P0-R2 skill tests
+P0-R2b,rollback identity,两个旧hook映射同一shim后分别恢复原命令;add用快照深比较,PASS,e2e "two stale hooks" test
+P0-R2c,connect rollback,无agentmemory机器回滚移除全部6钩+mcpServers,PASS,connect-changes.json + e2e home4 test
+P0-R2d,doctor strictness,6条agentmemory钩逐事件核对;核心FAIL不蒙混,PASS,doctor.sh per-event check
