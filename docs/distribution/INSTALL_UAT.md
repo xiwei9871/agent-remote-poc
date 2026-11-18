@@ -66,6 +66,31 @@ cd agent-learning-macos
 | Doctor 严格化 | 6 条 agentmemory 钩**逐事件**核对（缺一即 FAIL）；e2e 断言该 PASS 行 |
 | 测试规模 | 16/16（新增 4 个 R2 反例：双旧钩分别恢复、其他文件保留+外来恢复、重装不覆盖修改、无 AM 机器全量回滚） |
 
+## 第四轮整改 + 真实依赖 UAT（复审 R4，ACTUAL_RUN）
+
+### 新修复
+
+| 项 | 实测证据 |
+| --- | --- |
+| 无 config 失败恢复 | `HOME` 全新（无 `.config`）+ connect 失败 → 安装器删除 connect 写的半成品 config，目录亦清空，exit 1（e2e `P0-R4` 测试） |
+| **真实发现：connect 检测机制** | 真实 `agentmemory@0.9.32 connect devin --with-hooks --force` 在无 `~/.config/devin` 时报 `devin (skipped: not-detected)` **完全不接线**。install.sh 已改为 connect 前先建目录——全新账户真实 connect 实测写入 6 钩 + `mcpServers`（下方证据） |
+| doctor 引号路径 | 真实 connect 写 `node "/path/…"` 带引号命令，悬空检查改为剥引号后验证存在性，实测通过 |
+
+### 真实依赖 UAT（隔离 HOME + 真实 agentmemory 0.9.32 二进制，非 stub）
+
+| 步骤 | 结果 |
+| --- | --- |
+| install.sh --yes | 真实 connect 写入 6 钩（真实 plugin 路径）+ mcpServers；4 条 learning 钩带 `AL-HOOK` 标签 |
+| doctor.sh | 12 PASS + 1 FAIL(daemon) + 1 PART(空库) — daemon FAIL 为共享机假象：3111 被 owner 账户 daemon 占用、隔离 HOME 无凭据；真同事机上 install 自行拉起 daemon |
+| rollback.sh | `undid 11 package change(s)`（4 learning + 6 AM 钩 + 1 mcp）→ hooks 0、mcp 无 |
+| reinstall + uninstall.sh | 7 connect additions + 4 learning + 7 skills + guard dir 全清；mcp 无；记忆保留 |
+
+### 仍缺（COLLEAGUE_READY 门槛）
+
+- 独立 macOS **真账户**：Devin Desktop 装好的同事/测试账户首装（需 owner 建账户，GUI/凭据非我可达）
+- 该账户内 2 个全新 Desktop 会话目视：`Hook failed` 消失 + SessionStart 召回 + E03 阻断
+- daemon 自启在干净账户上的验证（共享机无法复现）
+
 ## 第三轮 P0 整改（复审 R3）
 
 | 整改 | 实测 |

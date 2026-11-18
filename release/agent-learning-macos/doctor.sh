@@ -72,7 +72,10 @@ let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}ca
 const missing=[];
 for(const [e,arr] of Object.entries(cfg.hooks||{})) (arr||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
   const m=(h.command||"").match(/^node\s+(\S+)/);
-  if(m&&!fs.existsSync(m[1])) missing.push(e+':'+m[1]);
+  if(!m) return;
+  // real `agentmemory connect` writes quoted paths: node "/abs/path/x.mjs"
+  const p1=m[1].split(String.fromCharCode(34)).join('').split(String.fromCharCode(39)).join('');
+  if(!fs.existsSync(p1)) missing.push(e+':'+p1);
 }));
 console.log(missing.length?missing.join(";"):"none");
 NODE

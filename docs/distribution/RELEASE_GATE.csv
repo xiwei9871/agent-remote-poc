@@ -38,3 +38,7 @@ P0-R3a,hook unique identity,每条写入命令带AL-HOOK标签;重排/复制后�
 P0-R3b,install failure transaction,connect/merge/verify任一失败→config恢复安装前快照,PASS,e2e AM_FAIL_CONNECT (stderr restore + config逐字节还原 + exit1)
 P0-R3c,uninstall completeness,卸载同时移除connect新增的6钩+mcpServers(仅限本机无agentmemory情形),PASS,e2e home6 test
 P0-R3d,doctor dangling check,所有node命令引用的脚本路径必须存在;死路径FAIL,PASS,e2e dangling test
+P0-R4a,fresh-account connect detection,connect前建DEVIN_CONFIG_DIR否则真实connect报not-detected跳过接线,PASS,real 0.9.32 isolated-HOME UAT
+P0-R4b,no-config failure restore,无config机器connect失败→半成品config删除不留残档,PASS,e2e P0-R4 test
+P0-R4c,doctor quoted-path handling,真实connect的node引号路径剥引号验证存在性,PASS,real UAT doctor output
+P0-R4d,real-deps lifecycle,真实0.9.32二进制+隔离HOME:install/doctor/rollback/uninstall,PASS(除daemon共享机假象),INSTALL_UAT R4 section

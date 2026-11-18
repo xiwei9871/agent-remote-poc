@@ -47,25 +47,34 @@ done
 say()  { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 die()  { printf 'FAIL: %s\n' "$*" >&2
-         if [[ -n "${SNAP:-}" && -f "$SNAP" ]]; then
-           cp "$SNAP" "$DEVIN_CONFIG" 2>/dev/null && \
-             echo "install failed — config restored to pre-install snapshot ($SNAP)" >&2
-         fi
+         [[ "$(type -t restore_config_on_failure 2>/dev/null)" == "function" ]] && restore_config_on_failure
          exit 1; }
 run()  { if [[ $DRY -eq 1 ]]; then say "  [dry] $*"; else "$@" || die "command failed: $*"; fi; }
 
 say "== Agent Learning installer v$PKG_VERSION =="
 say "target: $GUARD_DIR  config: $DEVIN_CONFIG"
 
-# Transaction guard (P0-R3): snapshot the config once up-front; if ANY later
-# step fails (connect, merge, skills, verification) restore it so a failed
-# install never leaves a half-written configuration behind.
-SNAP=""
+# Transaction guard (P0-R3/R4): snapshot the config once up-front; if ANY
+# later step fails (connect, merge, skills, verification) restore it so a
+# failed install never leaves a half-written configuration behind. If the
+# config did NOT exist before install (fresh account), failure means
+# removing the partial file — restoring "absent", not inventing content.
+SNAP=""; HAD_CONFIG=0
 if [[ $DRY -eq 0 && -f "$DEVIN_CONFIG" ]]; then
   SNAP="$DEVIN_CONFIG.pre-agentlearning-$(date +%Y%m%d%H%M%S)"
-  cp "$DEVIN_CONFIG" "$SNAP"
+  cp "$DEVIN_CONFIG" "$SNAP"; HAD_CONFIG=1
 fi
-trap 'rc=$?; if [[ $rc -ne 0 && -n "$SNAP" && -f "$SNAP" ]]; then cp "$SNAP" "$DEVIN_CONFIG" 2>/dev/null && echo "install failed — config restored to pre-install snapshot ($SNAP)" >&2; fi; exit $rc' ERR
+restore_config_on_failure() {
+  if [[ -n "$SNAP" && -f "$SNAP" ]]; then
+    cp "$SNAP" "$DEVIN_CONFIG" 2>/dev/null && \
+      echo "install failed — config restored to pre-install snapshot ($SNAP)" >&2
+  elif [[ $HAD_CONFIG -eq 0 && -f "$DEVIN_CONFIG" ]]; then
+    rm -f "$DEVIN_CONFIG" 2>/dev/null && \
+      echo "install failed — config did not exist before install; partial file removed" >&2
+    rmdir "$DEVIN_CONFIG_DIR" 2>/dev/null || true
+  fi
+}
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then restore_config_on_failure; fi; exit $rc' ERR
 
 ## ---------- 1. preflight ----------
 [[ "$(uname -s)" == "Darwin" ]] || die "only macOS is supported (this package was validated on macOS arm64)."
@@ -116,6 +125,10 @@ if [[ $NODEPS -eq 0 ]]; then
   # leave the 6 agentmemory capture hooks out (verified via --dry-run).
   # P0-R2: snapshot config BEFORE connect so rollback can undo exactly what
   # connect added (its 6 hooks + mcpServers) on machines that had none.
+  # R4 real-machine finding: `connect` reports "devin (skipped: not-detected)"
+  # when ~/.config/devin does not exist — it detects the agent by that dir.
+  # Creating it first is what lets a FRESH account actually get wired.
+  run mkdir -p "$DEVIN_CONFIG_DIR"
   if [[ $DRY -eq 0 && -f "$DEVIN_CONFIG" ]]; then
     cp "$DEVIN_CONFIG" "$DEVIN_CONFIG.bak.agentmemory-connect-$(date +%Y%m%d%H%M%S)"
   fi

@@ -284,6 +284,19 @@ test("P0-R3: failed connect restores pre-install config (transaction)", () => {
     throw new Error("config mutated by failed install — transaction broken");
 });
 
+test("P0-R4: failed connect on a machine with NO config leaves nothing behind", () => {
+  // Fresh-account edge the R4 review flagged: no config.json existed before
+  // install, so "restore" must mean removing the partial file, not writing
+  // back a snapshot that never existed.
+  const HOME7 = join(ROOT, "home7"); mkdirSync(HOME7, { recursive: true });
+  const e7 = { ...process.env, HOME: HOME7, PATH: `${BIN}:${process.env.PATH}`,
+    AGENT_LEARNING_HOME: join(HOME7, ".agent-learning"), AM_FAIL_CONNECT: "1" };
+  const r = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e7, encoding: "utf8", timeout: 30000 });
+  if (r.status === 0) throw new Error("install unexpectedly succeeded with failing connect");
+  const cfgPath = join(HOME7, ".config", "devin", "config.json");
+  if (existsSync(cfgPath)) throw new Error(`partial config left behind on fresh account:\n${readFileSync(cfgPath, "utf8")}`);
+});
+
 test("P0-R3: uninstall also removes agentmemory connect additions", () => {
   const HOME6 = join(ROOT, "home6"); mkdirSync(HOME6, { recursive: true });
   const e6 = { ...process.env, HOME: HOME6, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(HOME6, ".agent-learning") };
