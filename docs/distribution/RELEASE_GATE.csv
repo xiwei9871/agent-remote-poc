@@ -1,0 +1,26 @@
+gate,item,requirement,status,evidence
+G0,baseline versions pinned,agentmemory 0.9.32 + node>=18 + macOS arm64 only,PASS,RELEASE_AUDIT.md §1 ACTUAL_RUN
+G0,issue8 read-only attribution,hook WARN 是否阻断分发,PARTIAL,WARN源非本包hook(exit0契约+health实证); UNATTRIBUTED_DEVIN_INTERNAL 候选; doctor WARN扫描如实披露
+G0,docs contradictions cleared,hook 路径一律稳定 shim,PASS,WHAT_IS_INSTALLED.md
+G0,skills real path,~/.config/devin/skills/<name>/SKILL.md,PASS,官方 docs + ego-browser 实例核对
+G1,install.sh one-step,preflight/confirm/install/merge,PASS,e2e test1 ACTUAL_RUN(isolated HOME+stub deps)
+G1,--dry-run non-invasive,零写入,PASS,e2e test8
+G1,idempotent reinstall,二次安装零变更,PASS,e2e test2
+G1,stale-path migration,worktree/旧checkout路径重定向shim,PASS,e2e test3 (PR#7 P0 模式复用)
+G1,foreign hooks untouched,agentmemory/其他hook byte-identical,PASS,e2e test1+uninstall test
+G1,bundle hash verify,manifest.sha256 install时校验,PASS,e2e test5 corruption→FAIL
+G1,stable dir独立,~/.agent-learning 不依赖checkout,PASS,设计+e2e
+G1,pinned agentmemory,0.9.32 精确版本+版本断言,PASS,install.sh (npm路径e2e stub验证)
+G1,7 skills shipped,SKILL.md 标准frontmatter,PASS,e2e test1
+G1,auto-lesson marked experimental,不冒充稳定能力,PASS,CAPABILITY_MATRIX+README+skill标注
+G1,no hardcoded owner paths,无/Users/xiwei/brew/proxy假设,PASS,install.sh 全变量化+e2e独立HOME
+G2,isolated-HOME full lifecycle,装→幂等→迁移→doctor→回滚→卸载,PASS,8/8 e2e ACTUAL_RUN
+G2,data preservation on uninstall,memory DB 默认保留,PASS,e2e test7
+G2,clean physical machine,非Owner真机/真账户,NOT_TESTED,CLEAN_MACHINE_NOT_VERIFIED——故标 DISTRIBUTION_CANDIDATE
+G2,real new Desktop sessions,同事机2新会话无Hook failed+召回,NOT_TESTED,OWNER_VISUAL_UAT(开发机已证)
+G2,auto-lesson end-to-end,自发memory_lesson_save闭环,NOT_VERIFIED,实验功能 Stable 不含
+G3,tar.gz+sha256 artifact,可传输安装包,PASS,release/dist/ 28KB e9731c11
+G3,1-page中文手册,3步安装,PASS,README_同事快速开始.md
+G3,capability/privacy/troubleshoot docs,如实能力矩阵,PASS,docs/ 3 files
+G3,draft PR + SHA readback,git ls-remote,PASS,本提交
+verdict,,,,DISTRIBUTION_CANDIDATE(缺真机Gate;非COLLEAGUE_READY)
