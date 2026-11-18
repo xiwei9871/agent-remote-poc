@@ -11,10 +11,11 @@
 
 ## 已知限制（如实披露）
 
-1. **Devin `hook None exit 1` WARN**：Desktop/CLI 日志里偶发
-   `Effects evaluator failed for hook None`，已实测与每次工具调用相关，
-   但与本包 10 个 hook 无关（全部 exit-0 契约 + 运行证据）。上游未归因，
-   跟踪于内部 Issue #8。doctor 会报告 WARN 计数但标 `PART`，不是本包故障。
+1. **Devin `hook None exit 1` WARN（来源未确定）**：Desktop/CLI 日志里偶发
+   `Effects evaluator failed for hook None`，实测与工具调用时点相关。
+   已证实与本包 10 个 hook 无关（全部 exit-0 契约 + 运行证据），但具体
+   源头**未确定**——不能断言一定是 Devin 内部问题。doctor 如实报告
+   WARN 计数并标 `PART`，跟踪于内部 Issue #8。
 2. **自动学习**：`lesson-distiller` 只产出候选 Lesson 草稿供你确认；
    "纠错→自动持久化→跨会话复用" 的闭环尚未通过端到端验证，是实验功能。
 3. **平台**：仅验证 macOS arm64 + Node≥18 + Devin。Intel/其他 agent

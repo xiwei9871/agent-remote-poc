@@ -30,10 +30,10 @@
 - `~/stock_research/.codex/hooks.json` 存在但 **Devin providers 列表无 codex**，根本不加载。
 - `health.json` 今天 05:33 仍 `status:ok`（guard 在 WARN 同期正常工作）；agentmemory 观测数 1373→1419 持续捕获 —— 其 hooks 在真实事件下正常运行。
 
-**归因结论（Gate 0 判定）**：WARN 源 `hook None` **不是** 10 个已注册 hook 之一（全部实测 exit 0 且真实运行证据齐全）。最可能是 Devin 内部 "effects evaluator"（位于 permission/auto-decide 链路，`by cog` 决策紧邻触发点）或未命名评估命令 —— **归因为 `UNATTRIBUTED_DEVIN_INTERNAL` 候选，非本包 hook**。Issue #8 保持 OPEN。
+**归因结论（Gate 0 判定，来源未确定）**：WARN 源 `hook None` **不是** 10 个已注册 hook 之一（全部实测 exit 0 且真实运行证据齐全）——这一点有直接证据。**但具体源头未确定**（Devin 内部 evaluator 仅为候选方向，未经证实；不能凭间接证据断言）。Issue #8 保持 OPEN。
 
 **对同事分发的阻断评估**：
-- 本包交付的 hook 组件均有独立可证健康证据（真实 E03 拦截、health.json、exit-0 契约）→ **不构成 P0 阻断**。
+- 本包交付的 hook 组件均有独立可证健康证据（真实 E03 拦截、health.json、exit-0 契约）→ WARN 不构成对**本包组件**的 P0 阻断，但来源未确定本身仍是已知风险。
 - 但同事机器上同样可能出现该 WARN → `doctor.sh` 必须含 **post-install WARN 扫描**，输出 `KNOWN_ISSUE(UNATTRIBUTED)` 而非假装 ALL_HOOKS_HEALTHY；发行说明如实披露，不隐瞒。
 
 ## 3. 文档矛盾点清理（发行口径）

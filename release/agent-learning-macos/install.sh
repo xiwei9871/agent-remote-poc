@@ -97,7 +97,9 @@ if [[ $NODEPS -eq 0 ]]; then
     sleep 2
     [[ $DRY -eq 1 ]] || agentmemory status >/dev/null || warn "daemon not healthy yet — doctor.sh will re-check."
   fi
-  run agentmemory connect devin --force  # official wiring of its own hooks+MCP
+  # --with-hooks is REQUIRED: bare `connect` only writes mcpServers and would
+  # leave the 6 agentmemory capture hooks out (verified via --dry-run).
+  run agentmemory connect devin --with-hooks --force
 fi
 
 ## ---------- 5. stable guard bundle (hash-verified) ----------
@@ -119,7 +121,7 @@ if [[ $DRY -eq 0 ]]; then
 elif [[ ! -f "$DEVIN_CONFIG" ]]; then
   say "  [dry] would create $DEVIN_CONFIG (currently absent)"
 fi
-DRY="$DRY" CONFIG="$DEVIN_CONFIG" SHIM="$SHIM" node - <<'NODE'
+DRY="$DRY" CONFIG="$DEVIN_CONFIG" SHIM="$SHIM" AGENT_LEARNING_HOME="$AL_HOME" node - <<'NODE'
 const fs = require("node:fs");
 const CONFIG = process.env.CONFIG, SHIM = process.env.SHIM, DRY = process.env.DRY === "1";
 const raw = fs.existsSync(CONFIG) ? fs.readFileSync(CONFIG, "utf8") : "{}\n";
@@ -134,7 +136,7 @@ const WANT = [
   { evt: "PostToolUse", entry: { matcher: "^(exec)$", hooks: [{ type: "command", command: CMD["guard/guard.mjs"], timeout: 5 }] }, sig: "guard/guard.mjs" },
   { evt: "Stop", entry: { hooks: [{ type: "command", command: CMD["guard/guard.mjs"], timeout: 5 }] }, sig: "guard/guard.mjs" },
 ];
-const changed = [], notes = [];
+const changed = [], notes = [], ops = [];   // ops = machine-readable diff for rollback
 for (const w of WANT) {
   cfg.hooks[w.evt] = cfg.hooks[w.evt] || [];
   let found = false;
@@ -144,11 +146,13 @@ for (const w of WANT) {
     found = true;
     if (cmd !== CMD[w.sig]) {
       changed.push(`hooks.${w.evt}[${i}].hooks[${j}].command: repoint stale path -> shim`);
+      ops.push({ op: "repoint", evt: w.evt, from: cmd, to: CMD[w.sig] });
       if (!DRY) h.command = CMD[w.sig];
     } else notes.push(`${w.evt}[${i}]: already correct`);
   }));
   if (!found) {
     changed.push(`hooks.${w.evt}: add entry (${w.sig})`);
+    ops.push({ op: "add", evt: w.evt, command: CMD[w.sig] });
     if (!DRY) cfg.hooks[w.evt].push(w.entry);
   }
 }
@@ -159,6 +163,16 @@ const bak = `${CONFIG}.bak.agentlearning-${new Date().toISOString().replace(/[-:
 fs.copyFileSync(CONFIG, bak);
 const tmp = `${CONFIG}.tmp.${process.pid}`;
 fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n");
+// P0-B: persist the exact per-entry diff so rollback can restore only what
+// we changed instead of rolling back the whole file (which would eat hooks
+// the colleague added after install).
+const receiptPath = `${process.env.AGENT_LEARNING_HOME || require("node:os").homedir() + "/.agent-learning"}/guard/config-changes.json`;
+try { fs.mkdirSync(require("node:path").dirname(receiptPath), { recursive: true });
+  // accumulate ops across installs — rollback must be able to undo EVERY
+  // package change, not just the most recent run
+  let all = [];
+  try { all = JSON.parse(fs.readFileSync(receiptPath, "utf8")).ops || []; } catch {}
+  fs.writeFileSync(receiptPath, JSON.stringify({ ts: new Date().toISOString(), config: CONFIG, backup: bak, ops: all.concat(ops) }, null, 2) + "\n"); } catch {}
 // verify: every learning command points at shim; every other command identical
 const after = JSON.parse(fs.readFileSync(tmp, "utf8"));
 const flat = o => { const out = []; for (const [e, a] of Object.entries(o.hooks || {}))
@@ -175,11 +189,30 @@ fs.renameSync(tmp, CONFIG);
 console.log(`config: ${changed.length} change(s) applied atomically; backup ${bak}`);
 NODE
 
-## ---------- 7. skills ----------
+## ---------- 7. skills (ownership-protected) ----------
+# P0-A: never overwrite or later delete a skill the colleague already had.
+# Every dir we create gets an .agent-learning-owned marker recording the
+# installed SKILL.md sha256; pre-existing dirs with different content are
+# backed up aside instead of overwritten; uninstall removes ONLY marked,
+# byte-identical installs (user-modified ones are moved aside, not deleted).
 for d in "$HERE"/skills/*/; do
-  name="$(basename "$d")"
-  run mkdir -p "$DEVIN_SKILLS_DIR/$name"
-  run cp "$d/SKILL.md" "$DEVIN_SKILLS_DIR/$name/SKILL.md"
+  name="$(basename "$d")"; dst="$DEVIN_SKILLS_DIR/$name"
+  if [[ -d "$dst" && ! -f "$dst/.agent-learning-owned" ]]; then
+    if ! diff -q "$d/SKILL.md" "$dst/SKILL.md" >/dev/null 2>&1; then
+      bak="$dst.pre-agent-learning-$(date +%Y%m%d%H%M%S)"
+      warn "skill '$name' already exists with different content — backing it up to $bak"
+      run cp -R "$dst" "$bak"
+    else
+      say "skill '$name' already present with identical content — reusing"
+    fi
+  elif [[ -d "$dst" ]]; then
+    say "skill '$name' already installed by this package — refreshing"
+  fi
+  run mkdir -p "$dst"
+  run cp "$d/SKILL.md" "$dst/SKILL.md"
+  if [[ $DRY -eq 0 ]]; then
+    shasum -a256 "$dst/SKILL.md" | awk '{print $1}' > "$dst/.agent-learning-owned"
+  fi
 done
 
 ## ---------- 8. receipt ----------

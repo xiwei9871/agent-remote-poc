@@ -1,6 +1,6 @@
 gate,item,requirement,status,evidence
 G0,baseline versions pinned,agentmemory 0.9.32 + node>=18 + macOS arm64 only,PASS,RELEASE_AUDIT.md §1 ACTUAL_RUN
-G0,issue8 read-only attribution,hook WARN 是否阻断分发,PARTIAL,WARN源非本包hook(exit0契约+health实证); UNATTRIBUTED_DEVIN_INTERNAL 候选; doctor WARN扫描如实披露
+G0,issue8 read-only attribution,hook WARN 是否阻断分发,PARTIAL,WARN源非本包hook(exit0契约+health实证); UNATTRIBUTED（来源未确定）; doctor WARN扫描如实披露
 G0,docs contradictions cleared,hook 路径一律稳定 shim,PASS,WHAT_IS_INSTALLED.md
 G0,skills real path,~/.config/devin/skills/<name>/SKILL.md,PASS,官方 docs + ego-browser 实例核对
 G1,install.sh one-step,preflight/confirm/install/merge,PASS,e2e test1 ACTUAL_RUN(isolated HOME+stub deps)
@@ -24,3 +24,9 @@ G3,1-page中文手册,3步安装,PASS,README_同事快速开始.md
 G3,capability/privacy/troubleshoot docs,如实能力矩阵,PASS,docs/ 3 files
 G3,draft PR + SHA readback,git ls-remote,PASS,本提交
 verdict,,,,DISTRIBUTION_CANDIDATE(缺真机Gate;非COLLEAGUE_READY)
+P0-A,skills ownership,外来同名skill备份不覆盖/卸载仅删本包标记项,PASS,e2e P0-A test ACTUAL_RUN
+P0-B,differential rollback,仅撤销本包记录ops;安装后新增hooks/MCP保留,PASS,config-changes.json ops + e2e P0-B test
+P0-C,purge protection,--purge-data须打字DELETE-DATA确认,PASS,e2e P0-C test
+P0-D,real agentmemory wiring,真二进制connect --with-hooks验证6钩+MCP写入,PASS,ACTUAL_RUN 隔离HOME: mcpServers.agentmemory + 6 hooks(SessionStart/UserPromptSubmit/Pre/Post/Stop/SessionEnd)
+P0-E,doctor reliability,无rg依赖;核心故障FAIL不蒙混,PASS,e2e doctor-corruption test
+P0-F,tarball lifecycle,从最终tar.gz解压走完整生命周期,PASS,e2e P0-F test on shipped artifact

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # doctor.sh — verify an Agent Learning installation actually works.
-# Exit 0 = PASS, 1 = FAIL, 2 = PARTIAL (works but with known limitations).
+# Uses only POSIX tools + node (no ripgrep dependency — clean Macs may lack it).
+# Exit 0 = PASS, 1 = FAIL, 2 = PARTIAL (core works, non-core limitations only).
 set -uo pipefail
 
 AL_HOME="${AGENT_LEARNING_HOME:-$HOME/.agent-learning}"
@@ -19,17 +20,17 @@ say()  { printf '%s\n' "$*"; }
 
 say "== agent-learning doctor =="
 
-# 1. runtime
-if command -v node >/dev/null && (( "$(node -e 'process.stdout.write(String(process.versions.node.split(".")[0]))')" >= 18 )); then
+# 1. runtime (core)
+if command -v node >/dev/null && node -e 'process.exit(Number(process.versions.node.split(".")[0])>=18?0:1)'; then
   ok "node $(node --version)"
-else bad "node >=18 missing"; fi
+else bad "node >=18 missing — install Node first"; fi
 
-# 2. bundle integrity
+# 2. bundle integrity (core — wrong code must FAIL)
 if [[ -f "$GUARD_DIR/manifest.sha256" ]] && (cd "$GUARD_DIR" && shasum -a256 -c manifest.sha256 --quiet) 2>/dev/null; then
-  ok "guard bundle sha256 verified ($GUARD_DIR)"
-else bad "guard bundle missing or hash mismatch in $GUARD_DIR"; fi
+  ok "guard bundle sha256 verified"
+else bad "guard bundle missing or hash mismatch in $GUARD_DIR — re-run install.sh"; fi
 
-# 3. config wiring
+# 3. config wiring (core)
 CHK_OUT=$(DEVIN_CONFIG="$DEVIN_CONFIG" SHIM="$SHIM" node - <<'NODE' 2>/dev/null
 const fs=require("node:fs");
 let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}catch{console.log("NO_CONFIG");process.exit(0)}
@@ -46,42 +47,51 @@ NODE
 case "$CHK_OUT" in
   *NO_CONFIG*) bad "Devin config not found: $DEVIN_CONFIG";;
   *shimmed=4*stale=0*) ok "4 learning hooks wired to stable shim";;
-  *shimmed=*) warnp "learning hooks: $CHK_OUT (expected shimmed=4 stale=0)";;
-  *) warnp "could not parse config hooks ($CHK_OUT)";;
+  *) bad "learning hooks miswired: $CHK_OUT (expected shimmed=4 stale=0) — re-run install.sh";;
 esac
-[[ "$CHK_OUT" == *"agentmemory_hooks=0"* ]] && warnp "no agentmemory hooks in config — run 'agentmemory connect devin'" || true
+case "$CHK_OUT" in *agentmemory_hooks=0*) warnp "no agentmemory hooks in config — run 'agentmemory connect devin'";; esac
 
-# 4. MCP server entry
-if rg -q "agentmemory" "$MCP_CONFIG" 2>/dev/null; then ok "MCP agentmemory server configured"; else warnp "MCP config lacks agentmemory ($MCP_CONFIG)"; fi
+# 4. MCP server entry (core for recall) — Devin may keep it in config.json's
+#    mcpServers (newer builds migrate it to mcp_config.json); accept either.
+if grep -lq "agentmemory" "$MCP_CONFIG" "$DEVIN_CONFIG" 2>/dev/null; then
+  ok "MCP agentmemory server configured"
+else bad "MCP config lacks agentmemory — recall will not work"; fi
 
-# 5. agentmemory daemon
-if command -v agentmemory >/dev/null && agentmemory status 2>/dev/null | rg -q "healthy|Connected"; then
+# 5. agentmemory daemon (core for long-term memory)
+if ! command -v agentmemory >/dev/null; then
+  warnp "agentmemory CLI not installed (--no-deps install?) — memory features inactive"
+elif agentmemory status 2>/dev/null | grep -qE "healthy|Connected"; then
   ok "agentmemory daemon healthy ($(agentmemory --version 2>/dev/null || echo '?'))"
-else warnp "agentmemory daemon not reachable — long-term memory inactive until started"; fi
-
-# 6. functional hook checks (synthetic, harmless)
-pre() { printf '%s' "$1" | node "$SHIM" "$2"; }
-if [[ -f "$SHIM" ]]; then
-  out=$(pre '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"pkill -f doctor-e2e"}}' scripts/learning/guard/guard.mjs 2>/dev/null)
-  [[ "$out" == *'"decision":"block"'* && "$out" == *E03* ]] && ok "E03 block works (PreToolUse)" || bad "E03 block missing: $out"
-  pre '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo ok"}}' scripts/learning/guard/guard.mjs >/dev/null 2>&1 && ok "safe exec allowed" || bad "safe exec rejected"
-  pre '{"hook_event_name":"Stop"}' scripts/learning/guard/guard.mjs >/dev/null 2>&1 && ok "Stop hook exit 0" || bad "Stop hook exit nonzero"
-  out=$(pre '{"hook_event_name":"SessionStart","cwd":"/tmp"}' scripts/learning/session-context.mjs 2>/dev/null)
-  [[ "$out" == *additionalContext* ]] && ok "SessionStart lesson recall returns context" || warnp "SessionStart returned no context (new DB is normal on a fresh machine)"
-else bad "shim missing: $SHIM"; fi
-
-# 7. health + residual WARN scan (Issue #8 known issue)
-[[ -f "$GUARD_DIR/health.json" ]] && rg -q '"status": *"ok"' "$GUARD_DIR/health.json" 2>/dev/null \
-  && ok "shim health.json ok" || warnp "shim health not ok/not present yet"
-LOG=$(ls -t "$HOME/Library/Application Support/Devin/logs"/*/window*/exthost/output_logging_*/*devin-cli.log 2>/dev/null | head -1)
-if [[ -n "$LOG" ]]; then
-  W=$(rg -c "exited with code 1" "$LOG" 2>/dev/null || echo 0)
-  [[ "$W" -gt 0 ]] && warnp "Devin log has $W 'hook exit 1' WARNs — known Devin-internal UNATTRIBUTED issue (#8); our hooks are verified healthy above" || ok "no hook WARNs in current Devin log"
+else
+  bad "agentmemory installed but daemon unreachable — run 'agentmemory' to start it"
 fi
 
-# 8. skills installed
+# 6. functional hook checks (core — synthetic, harmless)
+pre() { printf '%s' "$1" | node "$SHIM" "$2" 2>/dev/null; }
+if [[ -f "$SHIM" ]]; then
+  out=$(pre '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"pkill -f doctor-e2e"}}' scripts/learning/guard/guard.mjs)
+  case "$out" in *'"decision":"block"'*E03*) ok "E03 block works (PreToolUse)";; *) bad "E03 block missing — guard not enforcing";; esac
+  pre '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo ok"}}' scripts/learning/guard/guard.mjs >/dev/null && ok "safe exec allowed" || bad "safe exec rejected"
+  pre '{"hook_event_name":"Stop"}' scripts/learning/guard/guard.mjs >/dev/null && ok "Stop hook exit 0" || bad "Stop hook exit nonzero"
+  out=$(pre '{"hook_event_name":"SessionStart","cwd":"/tmp"}' scripts/learning/session-context.mjs)
+  case "$out" in *additionalContext*) ok "SessionStart recall returns context";; *) warnp "SessionStart returned no context (empty DB is normal on fresh installs)";; esac
+else bad "shim missing: $SHIM"; fi
+
+# 7. health + residual WARN scan (non-core: source undetermined, Issue #8)
+if [[ -f "$GUARD_DIR/health.json" ]] && grep -q '"status": *"ok"' "$GUARD_DIR/health.json" 2>/dev/null; then
+  ok "shim health.json ok"
+else warnp "shim health not ok/not present yet"; fi
+LOG=$(ls -t "$HOME/Library/Application Support/Devin/logs"/*/window*/exthost/output_logging_*/*devin-cli.log 2>/dev/null | head -1)
+if [[ -n "$LOG" ]]; then
+  W=$(grep -c "exited with code 1" "$LOG" 2>/dev/null || echo 0)
+  if [[ "${W:-0}" -gt 0 ]]; then
+    warnp "Devin log has $W 'hook exit 1' WARNs — source UNDETERMINED (Issue #8); our hooks verified healthy above, but WARNs are not proven Devin-internal"
+  else ok "no hook WARNs in current Devin log"; fi
+fi
+
+# 8. skills installed (non-core)
 N=$(ls -d "$DEVIN_SKILLS_DIR"/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-[[ "$N" -ge 7 ]] && ok "$N skills installed" || warnp "only $N skills found in $DEVIN_SKILLS_DIR"
+[[ "${N:-0}" -ge 7 ]] && ok "$N skills installed" || warnp "only ${N:-0} skills found in $DEVIN_SKILLS_DIR"
 
 say
 if (( FAILC > 0 )); then say "RESULT: FAIL ($FAILC) — fix the FAIL lines, then re-run doctor."; exit 1

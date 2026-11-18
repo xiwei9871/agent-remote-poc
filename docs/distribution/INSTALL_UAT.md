@@ -17,7 +17,19 @@
 | uninstall.sh | PASS — 本包 hooks/skills/目录移除；`~/.agentmemory` 数据默认保留 |
 | `--dry-run` | PASS — 零文件写入 |
 
-**测试：8/8 pass**（`node --test tests/distribution/install-e2e.test.mjs`）。
+**测试：12/12 pass**（`node --test tests/distribution/install-e2e.test.mjs`）。
+
+## P0 整改复核（PR #10 复审后）
+
+| 整改 | 实测 |
+| --- | --- |
+| P0-A skills 所有权 | 外来同名 skill → 备份 `.pre-agent-learning-*` 后安装本包版；卸载仅删带 `.agent-learning-owned` 且 hash 未变的，用户改过的挪为 `.removed-*`；无标记目录绝不动 |
+| P0-B 差异回滚 | install 记录 ops 到 `config-changes.json`（跨次累积）；rollback 只撤销记录的变更，repoint 仅当原脚本仍存在才还原（死路径删条目），安装后新增 hooks/MCP 全部保留 |
+| P0-C 数据保护 | `--purge-data` 需交互输入 `DELETE-DATA` 或 `CONFIRM_PURGE=DELETE-DATA`；默认保留 `~/.agentmemory` |
+| P0-D 真实依赖 | **真实 `agentmemory@0.9.32` 二进制**在隔离 HOME 实跑 `connect devin --with-hooks`：写入 `mcpServers.agentmemory` + 6 hooks（SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop/SessionEnd）。另发现裸 `connect` 不写 hooks → install 已用 `--with-hooks` 修正 |
+| P0-E doctor | 移除 rg 依赖（纯 POSIX+node）；bundle/hash/接线/E03/MCP/daemon 等核心故障一律 FAIL，仅健康提示/WARN/空库/技能数为 PART |
+| P0-F 终包验证 | e2e 从 `release/dist/*.tar.gz` 解压执行 install→doctor→uninstall 全通过 |
+| Issue #8 口径 | WARN 归因改为**来源未确定**（本包 10 钩 exit-0 有直接证据；不声称一定是 Devin 内部） |
 
 ## 交付物
 
