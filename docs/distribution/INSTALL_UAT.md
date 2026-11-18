@@ -65,3 +65,13 @@ cd agent-learning-macos
 | AgentMemory 回滚 | connect 前快照 + `connect-changes.json` 记录新增钩/mcpServers；无 agentmemory 的机器回滚后 6 钩与 MCP 全部移除 |
 | Doctor 严格化 | 6 条 agentmemory 钩**逐事件**核对（缺一即 FAIL）；e2e 断言该 PASS 行 |
 | 测试规模 | 16/16（新增 4 个 R2 反例：双旧钩分别恢复、其他文件保留+外来恢复、重装不覆盖修改、无 AM 机器全量回滚） |
+
+## 第三轮 P0 整改（复审 R3）
+
+| 整改 | 实测 |
+| --- | --- |
+| Hook 唯一身份 | 每条写入命令带  后缀（sh -c 是注释、exec-array 是 node 忽略的多余 argv——shim 只读 argv[2]，已实测 E03 带后缀仍 block）。回滚按 op.to 精确匹配**全局唯一**的那条钩——重排、复制、同 shim 映射都无法串位。R3 反例测试：A/B 条目装后被同事对调，回滚后 B@entry0→wt-B、A@entry1→wt-A 各回原位 |
+| 安装失败事务 | 安装前快照 ； +  失败即 die + ERR trap 双保险——connect 中途失败实测：stderr 报 restore、config 逐字节还原、exit 1（修复了 bash ERR trap 不捕函数返回值的真实缺陷） |
+| 卸载完整性 | uninstall 现同时按 connect-changes.json 移除 connect 新增的 6 钩 + mcpServers（仅限本机原无 agentmemory 情形，已装者不受影响）；外来 skill 备份恢复原位 |
+| Doctor 严格化 | 新增 3c 悬空检查：所有  钩命令的脚本路径必须存在，死路径直接 FAIL（正是本包要消灭的 MODULE_NOT_FOUND 类故障）；6 条 agentmemory 钩逐事件核对保留 |
+| 测试规模 | 20/20（R3 新增 4 反例：重排还原、connect 失败事务、卸载含 connect 撤销、悬空 FAIL） |

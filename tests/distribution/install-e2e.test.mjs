@@ -19,7 +19,15 @@ const SKILLS = join(HOME, ".config", "devin", "skills");
 mkdirSync(HOME, { recursive: true }); mkdirSync(BIN, { recursive: true });
 process.on("exit", () => rmSync(ROOT, { recursive: true, force: true }));
 
-// stub agentmemory: records calls, healthy status
+// stub agentmemory: records calls, healthy status; writes REAL script paths
+// so doctor's dangling-hook check exercises the true pass path.
+const FOREIGN = join(ROOT, "foreign"); mkdirSync(FOREIGN, { recursive: true });
+for (const f of ["unrelated.mjs", "new-hook.mjs"]) writeFileSync(join(FOREIGN, f), "// foreign\n");
+const UNRELATED = join(FOREIGN, "unrelated.mjs"), NEWHOOK = join(FOREIGN, "new-hook.mjs");
+const AMLIB = join(ROOT, "node_modules", "@agentmemory", "agentmemory", "plugin", "scripts");
+mkdirSync(AMLIB, { recursive: true });
+for (const s of ["prompt-submit", "pre-tool-use", "post-tool-use", "stop", "session-end", "session-start"])
+  writeFileSync(join(AMLIB, s + ".mjs"), "// stub agentmemory hook\n");
 writeFileSync(join(BIN, "agentmemory"), `#!/usr/bin/env bash
 echo "agentmemory $*" >> "${ROOT}/agentmemory.calls"
 case "$1" in
@@ -32,9 +40,10 @@ case "$1" in
     c.mcpServers={...(c.mcpServers||{}),agentmemory:{command:"npx",args:["-y","@agentmemory/mcp"]}};
     c.hooks=c.hooks||{};
     const ev={UserPromptSubmit:"prompt-submit",PreToolUse:"pre-tool-use",PostToolUse:"post-tool-use",Stop:"stop",SessionEnd:"session-end",SessionStart:"session-start"};
-    for(const[e,s]of Object.entries(ev)){(c.hooks[e]=c.hooks[e]||[]).push({hooks:[{type:"command",command:"node /am/lib/node_modules/@agentmemory/agentmemory/plugin/scripts/"+s+".mjs"}]});}
+    for(const[e,s]of Object.entries(ev)){(c.hooks[e]=c.hooks[e]||[]).push({hooks:[{type:"command",command:"node ${AMLIB}/"+s+".mjs"}]});}
     fs.writeFileSync(p,JSON.stringify(c,null,2));
-  ';;
+  '
+    if [ "$AM_FAIL_CONNECT" = "1" ]; then echo "connect failed (simulated)" >&2; exit 1; fi;;
 esac
 exit 0`);
 writeFileSync(join(BIN, "npm"), `#!/usr/bin/env bash
@@ -50,15 +59,19 @@ const SHIMCMD = `node ${GUARD}/hook-shim.mjs`;
 
 test("install: bundle + 4 hooks + skills land, deps invoked, receipt written", () => {
   mkdirSync(join(HOME, ".config", "devin"), { recursive: true });
-  writeFileSync(join(HOME, ".config", "devin", "config.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node /unrelated.mjs" }] }] } }, null, 2));
+  writeFileSync(join(HOME, ".config", "devin", "config.json"), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `node ${UNRELATED}` }] }] } }, null, 2));
   const r = sh("install.sh", ["--yes"]);
   if (r.status !== 0) throw new Error(`install failed:\n${r.stdout}\n${r.stderr}`);
   for (const f of ["hook-shim.mjs", "bin/guard.mjs", "bin/policy.json", "bin/session-context.mjs", "manifest.sha256", "install-receipt.json"])
     if (!existsSync(join(GUARD, f))) throw new Error(`missing ${f}`);
   const c = cmds();
   if (c.filter(x => x.startsWith(`${SHIMCMD} scripts/learning/guard/guard.mjs`)).length !== 3) throw new Error("guard shim not wired to 3 events");
-  if (c.filter(x => x === `${SHIMCMD} scripts/learning/session-context.mjs`).length !== 1) throw new Error("session-context not wired");
-  if (!c.includes("node /unrelated.mjs")) throw new Error("foreign hook lost!");
+  if (c.filter(x => x.startsWith(`${SHIMCMD} scripts/learning/session-context.mjs`)).length !== 1) throw new Error("session-context not wired");
+  // P0-R3: every installed learning hook carries a unique identity tag
+  const tags = c.filter(x => x.startsWith(SHIMCMD)).map(x => x.match(/# AL-HOOK:([0-9a-f]+)$/)?.[1]);
+  if (tags.length !== 4 || tags.some(t => !t)) throw new Error("learning hooks lack AL-HOOK identity tags");
+  if (new Set(tags).size !== 4) throw new Error("AL-HOOK tags not unique");
+  if (!c.includes(`node ${UNRELATED}`)) throw new Error("foreign hook lost!");
   for (const s of ["memory-recall", "error-triage", "self-repair", "lesson-distiller", "lesson-validator", "evidence-verifier", "learning-health"])
     if (!existsSync(join(SKILLS, s, "SKILL.md"))) throw new Error(`skill ${s} missing`);
   const calls = readFileSync(join(ROOT, "agentmemory.calls"), "utf8");
@@ -77,7 +90,7 @@ test("stale repo/worktree hook paths migrate to shim on next install", () => {
   writeFileSync(CONFIG, JSON.stringify(c, null, 2));
   const r = sh("install.sh", ["--yes"]);
   if (r.status !== 0) throw new Error("migrate run failed");
-  if (!cmds().includes(`${SHIMCMD} scripts/learning/guard/guard.mjs`)) throw new Error("stale path not repointed");
+  if (!cmds().some(x => x.startsWith(`${SHIMCMD} scripts/learning/guard/guard.mjs`))) throw new Error("stale path not repointed");
   if (cmds().some(x => x.includes("worktree"))) throw new Error("worktree path survived");
 });
 
@@ -102,7 +115,7 @@ test("rollback removes package changes only (differential)", () => {
   // differential semantics: our learning entries gone, foreign entries intact
   if (cmds().some(x => /scripts\/learning|agent-learning\/guard/.test(x)))
     throw new Error("learning hooks left after rollback");
-  if (!cmds().includes("node /unrelated.mjs")) throw new Error("foreign hook lost by rollback");
+  if (!cmds().includes(`node ${UNRELATED}`)) throw new Error("foreign hook lost by rollback");
 });
 
 test("P0-A: pre-existing foreign skill is backed up, not overwritten/deleted", () => {
@@ -132,7 +145,7 @@ test("P0-B: rollback preserves hooks/MCP added AFTER install (differential)", ()
   if (sh("install.sh", ["--yes"]).status !== 0) throw new Error("reinstall failed");
   // colleague adds their own hook + MCP afterwards
   const c = cfg();
-  c.hooks.Stop.push({ hooks: [{ type: "command", command: "node /colleague/new-hook.mjs" }] });
+  c.hooks.Stop.push({ hooks: [{ type: "command", command: `node ${NEWHOOK}` }] });
   c.mcpServers = { mine: { command: "mine" } };
   writeFileSync(CONFIG, JSON.stringify(c, null, 2));
   const r = sh("rollback.sh");
@@ -141,7 +154,7 @@ test("P0-B: rollback preserves hooks/MCP added AFTER install (differential)", ()
   // our learning hooks removed, colleague's additions intact
   if (cmds().some(x => /scripts\/learning|agent-learning\/guard/.test(x)))
     throw new Error("learning hooks left after rollback");
-  if (!cmds().includes("node /colleague/new-hook.mjs")) throw new Error("post-install hook lost by rollback!");
+  if (!cmds().includes(`node ${NEWHOOK}`)) throw new Error("post-install hook lost by rollback!");
   if (!after.mcpServers?.mine) throw new Error("post-install MCP config lost by rollback!");
 });
 
@@ -229,6 +242,69 @@ test("P0-R2: rollback on a no-agentmemory machine removes ALL connect changes", 
   const leftover = Object.values(after.hooks || {}).flat().flatMap(e => (e.hooks || []).map(h => h.command || ""))
     .filter(c => /agentmemory|scripts\/learning|agent-learning\/guard/.test(c));
   if (leftover.length) throw new Error(`hooks left after full rollback: ${leftover}`);
+});
+
+test("P0-R3: reorder counterexample — rollback restores each entry's OWN original", () => {
+  // The R3 reviewer's case: two stale hooks → same shim, then the colleague
+  // REORDERS the entries. Position-paired rollback would swap A/B; tagged
+  // identity must not.
+  const A = join(ROOT, "r3-A", "scripts", "learning", "guard");
+  const B = join(ROOT, "r3-B", "scripts", "learning", "guard");
+  mkdirSync(A, { recursive: true }); mkdirSync(B, { recursive: true });
+  writeFileSync(join(A, "guard.mjs"), "// A"); writeFileSync(join(B, "guard.mjs"), "// B");
+  const c = cfg();
+  c.hooks.Stop = [
+    { matcher: "a", hooks: [{ type: "command", command: `node ${ROOT}/r3-A/scripts/learning/guard/guard.mjs` }] },
+    { matcher: "b", hooks: [{ type: "command", command: `node ${ROOT}/r3-B/scripts/learning/guard/guard.mjs` }] }];
+  writeFileSync(CONFIG, JSON.stringify(c, null, 2));
+  if (sh("install.sh", ["--yes"]).status !== 0) throw new Error("install failed");
+  // colleague reorders: entry "b" now first
+  const c2 = cfg();
+  c2.hooks.Stop = [c2.hooks.Stop[1], c2.hooks.Stop[0]];
+  writeFileSync(CONFIG, JSON.stringify(c2, null, 2));
+  if (sh("rollback.sh").status !== 0) throw new Error("rollback failed");
+  const stops = cfg().hooks.Stop;
+  if (stops[0].hooks[0].command !== `node ${ROOT}/r3-B/scripts/learning/guard/guard.mjs`)
+    throw new Error(`entry identity lost after reorder: ${stops[0].hooks[0].command}`);
+  if (stops[1].hooks[0].command !== `node ${ROOT}/r3-A/scripts/learning/guard/guard.mjs`)
+    throw new Error(`entry identity lost after reorder: ${stops[1].hooks[0].command}`);
+});
+
+test("P0-R3: failed connect restores pre-install config (transaction)", () => {
+  const HOME5 = join(ROOT, "home5"); mkdirSync(HOME5, { recursive: true });
+  const cfgDir = join(HOME5, ".config", "devin"); mkdirSync(cfgDir, { recursive: true });
+  const preCfg = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node ${NEWHOOK}` }] }] } }, null, 2);
+  writeFileSync(join(cfgDir, "config.json"), preCfg);
+  const e5 = { ...process.env, HOME: HOME5, PATH: `${BIN}:${process.env.PATH}`,
+    AGENT_LEARNING_HOME: join(HOME5, ".agent-learning"), AM_FAIL_CONNECT: "1" };
+  const r = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e5, encoding: "utf8", timeout: 30000 });
+  if (r.status === 0) throw new Error("install unexpectedly succeeded with failing connect");
+  if (!/config restored to pre-install snapshot/.test(r.stderr)) throw new Error(`no transaction restore: ${r.stderr}`);
+  if (readFileSync(join(cfgDir, "config.json"), "utf8") !== preCfg)
+    throw new Error("config mutated by failed install — transaction broken");
+});
+
+test("P0-R3: uninstall also removes agentmemory connect additions", () => {
+  const HOME6 = join(ROOT, "home6"); mkdirSync(HOME6, { recursive: true });
+  const e6 = { ...process.env, HOME: HOME6, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(HOME6, ".agent-learning") };
+  const run = (s, a = []) => spawnSync("bash", [join(PKG, s), ...a], { env: e6, encoding: "utf8", timeout: 30000 });
+  if (run("install.sh", ["--yes"]).status !== 0) throw new Error("fresh install failed");
+  if (run("uninstall.sh").status !== 0) throw new Error("uninstall failed");
+  const c6 = JSON.parse(readFileSync(join(HOME6, ".config", "devin", "config.json"), "utf8"));
+  const left = Object.values(c6.hooks || {}).flat().flatMap(e => (e.hooks || []).map(h => h.command || ""))
+    .filter(x => /agentmemory|agent-learning\/guard|scripts\/learning/.test(x));
+  if (left.length) throw new Error(`uninstall left hooks behind: ${left}`);
+  if (c6.mcpServers?.agentmemory) throw new Error("uninstall left mcpServers.agentmemory");
+});
+
+test("P0-R3: doctor FAILs on dangling hook script paths", () => {
+  const c = cfg();
+  c.hooks.SessionEnd = [{ hooks: [{ type: "command", command: "node /does/not/exist/dead-hook.mjs" }] }];
+  writeFileSync(CONFIG, JSON.stringify(c, null, 2));
+  const r = sh("doctor.sh");
+  if (r.status !== 1 || !/dangling/.test(r.stdout)) throw new Error(`dangling hook not caught: ${r.stdout}`);
+  // cleanup: drop the dead entry
+  const c2 = cfg(); c2.hooks.SessionEnd = []; writeFileSync(CONFIG, JSON.stringify(c2, null, 2));
 });
 
 test("P0-F: lifecycle works from the shipped tar.gz, not just the source tree", () => {

@@ -24,7 +24,7 @@
 #        DEVIN_CONFIG_DIR    (default dirname of DEVIN_CONFIG)
 #        DEVIN_SKILLS_DIR    (default $DEVIN_CONFIG_DIR/skills)
 #        AGENTMEMORY_VERSION (default pinned in VERSION file)
-set -euo pipefail
+set -eEuo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PKG_VERSION="$(cat "$HERE/VERSION" 2>/dev/null || echo dev)"
@@ -46,11 +46,26 @@ for a in "$@"; do
 done
 say()  { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
-die()  { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
-run()  { if [[ $DRY -eq 1 ]]; then say "  [dry] $*"; else "$@"; fi; }
+die()  { printf 'FAIL: %s\n' "$*" >&2
+         if [[ -n "${SNAP:-}" && -f "$SNAP" ]]; then
+           cp "$SNAP" "$DEVIN_CONFIG" 2>/dev/null && \
+             echo "install failed — config restored to pre-install snapshot ($SNAP)" >&2
+         fi
+         exit 1; }
+run()  { if [[ $DRY -eq 1 ]]; then say "  [dry] $*"; else "$@" || die "command failed: $*"; fi; }
 
 say "== Agent Learning installer v$PKG_VERSION =="
 say "target: $GUARD_DIR  config: $DEVIN_CONFIG"
+
+# Transaction guard (P0-R3): snapshot the config once up-front; if ANY later
+# step fails (connect, merge, skills, verification) restore it so a failed
+# install never leaves a half-written configuration behind.
+SNAP=""
+if [[ $DRY -eq 0 && -f "$DEVIN_CONFIG" ]]; then
+  SNAP="$DEVIN_CONFIG.pre-agentlearning-$(date +%Y%m%d%H%M%S)"
+  cp "$DEVIN_CONFIG" "$SNAP"
+fi
+trap 'rc=$?; if [[ $rc -ne 0 && -n "$SNAP" && -f "$SNAP" ]]; then cp "$SNAP" "$DEVIN_CONFIG" 2>/dev/null && echo "install failed — config restored to pre-install snapshot ($SNAP)" >&2; fi; exit $rc' ERR
 
 ## ---------- 1. preflight ----------
 [[ "$(uname -s)" == "Darwin" ]] || die "only macOS is supported (this package was validated on macOS arm64)."
@@ -158,11 +173,20 @@ cfg.hooks = cfg.hooks || {};
 const CMD = { "guard/guard.mjs": `node ${SHIM} scripts/learning/guard/guard.mjs`,
               "session-context.mjs": `node ${SHIM} scripts/learning/session-context.mjs` };
 const relRe = /scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
+// P0-R3 unique identity: every command WE write carries a per-hook tag
+// `# AL-HOOK:<hex>`. Under `sh -c` it is a comment; under exec-array it is
+// ignored argv — either way harmless to the shim (which reads argv[2]).
+// It makes each installed hook globally unique, so rollback restores the
+// exact entry even after the colleague reorders hooks or two stale paths
+// mapped to the same shim — the R3 counterexample that position-pairing
+// could not solve.
+const tag = () => ` # AL-HOOK:${require("node:crypto").randomBytes(4).toString("hex")}`;
+const isOurs = (c, sig) => c === CMD[sig] || c.startsWith(CMD[sig] + " # AL-HOOK:");
 const WANT = [
-  { evt: "SessionStart", entry: { hooks: [{ type: "command", command: CMD["session-context.mjs"], timeout: 5 }] }, sig: "session-context.mjs" },
-  { evt: "PreToolUse", entry: { matcher: "^(exec|kill_shell|write_to_process|write|edit|apply_patch)$", hooks: [{ type: "command", command: CMD["guard/guard.mjs"], timeout: 5 }] }, sig: "guard/guard.mjs" },
-  { evt: "PostToolUse", entry: { matcher: "^(exec)$", hooks: [{ type: "command", command: CMD["guard/guard.mjs"], timeout: 5 }] }, sig: "guard/guard.mjs" },
-  { evt: "Stop", entry: { hooks: [{ type: "command", command: CMD["guard/guard.mjs"], timeout: 5 }] }, sig: "guard/guard.mjs" },
+  { evt: "SessionStart", sig: "session-context.mjs", matcher: null },
+  { evt: "PreToolUse",  sig: "guard/guard.mjs", matcher: "^(exec|kill_shell|write_to_process|write|edit|apply_patch)$" },
+  { evt: "PostToolUse", sig: "guard/guard.mjs", matcher: "^(exec)$" },
+  { evt: "Stop",        sig: "guard/guard.mjs", matcher: null },
 ];
 const changed = [], notes = [], ops = [];   // ops = machine-readable diff for rollback
 for (const w of WANT) {
@@ -172,16 +196,21 @@ for (const w of WANT) {
     const cmd = h.command || "", m = cmd.match(relRe);
     if (!m || m[1] !== w.sig) return;
     found = true;
-    if (cmd !== CMD[w.sig]) {
+    if (!isOurs(cmd, w.sig)) {
+      const to = CMD[w.sig] + tag();
       changed.push(`hooks.${w.evt}[${i}].hooks[${j}].command: repoint stale path -> shim`);
-      ops.push({ op: "repoint", evt: w.evt, from: cmd, to: CMD[w.sig] });
-      if (!DRY) h.command = CMD[w.sig];
+      ops.push({ op: "repoint", evt: w.evt, from: cmd, to });
+      if (!DRY) h.command = to;
     } else notes.push(`${w.evt}[${i}]: already correct`);
   }));
   if (!found) {
+    const to = CMD[w.sig] + tag();
+    const entry = w.matcher
+      ? { matcher: w.matcher, hooks: [{ type: "command", command: to, timeout: 5 }] }
+      : { hooks: [{ type: "command", command: to, timeout: 5 }] };
     changed.push(`hooks.${w.evt}: add entry (${w.sig})`);
-    ops.push({ op: "add", evt: w.evt, entry: w.entry });   // snapshot for exact removal
-    if (!DRY) cfg.hooks[w.evt].push(w.entry);
+    ops.push({ op: "add", evt: w.evt, entry });   // snapshot (tagged) for exact removal
+    if (!DRY) cfg.hooks[w.evt].push(entry);
   }
 }
 if (!changed.length) { console.log("config: already up to date (idempotent)"); process.exit(0); }

@@ -34,3 +34,7 @@ P0-R2a,skill ownership complete,重装不覆盖用户修改/卸载仅删本包�
 P0-R2b,rollback identity,两个旧hook映射同一shim后分别恢复原命令;add用快照深比较,PASS,e2e "two stale hooks" test
 P0-R2c,connect rollback,无agentmemory机器回滚移除全部6钩+mcpServers,PASS,connect-changes.json + e2e home4 test
 P0-R2d,doctor strictness,6条agentmemory钩逐事件核对;核心FAIL不蒙混,PASS,doctor.sh per-event check
+P0-R3a,hook unique identity,每条写入命令带AL-HOOK标签;重排/复制后回滚仍各回各原命令,PASS,e2e reorder counterexample (B回wt-B@entry0 A回wt-A@entry1)
+P0-R3b,install failure transaction,connect/merge/verify任一失败→config恢复安装前快照,PASS,e2e AM_FAIL_CONNECT (stderr restore + config逐字节还原 + exit1)
+P0-R3c,uninstall completeness,卸载同时移除connect新增的6钩+mcpServers(仅限本机无agentmemory情形),PASS,e2e home6 test
+P0-R3d,doctor dangling check,所有node命令引用的脚本路径必须存在;死路径FAIL,PASS,e2e dangling test

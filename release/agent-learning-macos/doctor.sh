@@ -63,6 +63,24 @@ elif [[ "$AM_OUT" == "NA" ]]; then warnp "cannot check agentmemory hooks (no con
 elif ! command -v agentmemory >/dev/null; then warnp "agentmemory hooks absent ($AM_OUT) and CLI missing (--no-deps install?)"
 else bad "agentmemory capture hooks missing ($AM_OUT) — run 'agentmemory connect devin --with-hooks'"; fi
 
+# 3c. dangling-hook check: every `node <path>` hook command must point at a
+#     script that actually exists on this machine — a dead path is exactly
+#     the MODULE_NOT_FOUND/exit-1 failure mode this package exists to fix.
+DANGLE_OUT=$(DEVIN_CONFIG="$DEVIN_CONFIG" node - <<'NODE' 2>/dev/null
+const fs=require("node:fs");
+let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}catch{console.log("NA");process.exit(0)}
+const missing=[];
+for(const [e,arr] of Object.entries(cfg.hooks||{})) (arr||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
+  const m=(h.command||"").match(/^node\s+(\S+)/);
+  if(m&&!fs.existsSync(m[1])) missing.push(e+':'+m[1]);
+}));
+console.log(missing.length?missing.join(";"):"none");
+NODE
+)
+if [[ "$DANGLE_OUT" == "none" ]]; then ok "no dangling hook script paths"
+elif [[ "$DANGLE_OUT" == "NA" || -z "$DANGLE_OUT" ]]; then warnp "cannot verify hook script paths (no config)"
+else bad "dangling hook scripts (MODULE_NOT_FOUND risk): $DANGLE_OUT"; fi
+
 # 4. MCP server entry (core for recall) — Devin may keep it in config.json's
 #    mcpServers (newer builds migrate it to mcp_config.json); accept either.
 if grep -lq "agentmemory" "$MCP_CONFIG" "$DEVIN_CONFIG" 2>/dev/null; then

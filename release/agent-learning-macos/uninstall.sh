@@ -19,18 +19,44 @@ for a in "$@"; do case "$a" in
 # 1. strip our hook entries from the Devin config (foreign entries untouched)
 if [[ -f "$DEVIN_CONFIG" ]]; then
   cp "$DEVIN_CONFIG" "$DEVIN_CONFIG.bak.agentlearning-uninstall-$(date +%Y%m%d%H%M%S)"
-  CONFIG="$DEVIN_CONFIG" node - <<'NODE'
-const fs=require("node:fs");const C=process.env.CONFIG;
+  CONFIG="$DEVIN_CONFIG" AL_HOME="$AL_HOME" node - <<'NODE'
+const fs=require("node:fs"),p=require("node:path");const C=process.env.CONFIG,AL=process.env.AL_HOME;
 const cfg=JSON.parse(fs.readFileSync(C,"utf8"));
 const re=/scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)|\.agent-learning\/guard\/hook-shim\.mjs/;
+const deepEq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 let removed=0;
 for(const [e,arr] of Object.entries(cfg.hooks||{})){
   cfg.hooks[e]=arr.map(en=>{const kept=(en.hooks||[]).filter(h=>!re.test(h.command||""));
     removed+=(en.hooks||[]).length-kept.length;
     return kept.length?{...en,hooks:kept}:null;}).filter(Boolean);
 }
-fs.writeFileSync(C,JSON.stringify(cfg,null,2)+"\n");
 console.log(`config: removed ${removed} learning hook entr${removed===1?"y":"ies"} (others untouched)`);
+
+// P0-R3: also undo what `agentmemory connect --with-hooks` added on this
+// machine — but ONLY what was recorded as added. Colleagues who already had
+// AgentMemory lose nothing; colleagues who didn't get a clean slate back.
+let cc=null;
+try{cc=JSON.parse(fs.readFileSync(p.join(AL,"guard","connect-changes.json"),"utf8"))}catch{}
+if(cc?.ops){
+  let undone=0;
+  for(const [e,cmds] of Object.entries(cc.ops.hookCommands||{})){
+    const arr=cfg.hooks?.[e]||[];
+    for(const cmd of cmds){
+      for(const en of arr){
+        const i=(en.hooks||[]).findIndex(h=>h.command===cmd);
+        if(i>=0){en.hooks.splice(i,1);undone++;break;}
+      }
+    }
+    cfg.hooks[e]=arr.filter(en=>(en.hooks||[]).length>0);
+  }
+  if(cc.ops.mcpAdded&&cfg.mcpServers&&deepEq(cfg.mcpServers[cc.ops.mcpAdded.key],cc.ops.mcpAdded.value)){
+    delete cfg.mcpServers[cc.ops.mcpAdded.key];
+    if(Object.keys(cfg.mcpServers).length===0)delete cfg.mcpServers;
+    undone++;
+  }
+  console.log(`config: removed ${undone} agentmemory-connect addition(s) recorded at install`);
+}
+fs.writeFileSync(C,JSON.stringify(cfg,null,2)+"\n");
 NODE
 else
   echo "config not found — skipping hook removal"

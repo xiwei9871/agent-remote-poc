@@ -7,10 +7,15 @@
 #   connect-changes.json  — what `agentmemory connect --with-hooks` added
 #
 # Identity rules (P0-R2):
-#   repoint ops are consumed IN ORDER — two stale hooks that both mapped to
-#   the same shim command are restored to their OWN originals, not a shared
-#   one. A repoint is only restored when the original script still exists;
-#   a dead path removes that entry instead of resurrecting it.
+#   repoint ops restore by UNIQUE IDENTITY: commands written by this
+#   package carry a `# AL-HOOK:<hex>` tag, so op.to matches exactly one
+#   hook no matter how the colleague reordered or duplicated entries —
+#   two stale paths that mapped to the same shim restore to their OWN
+#   originals even if the entries were otherwise identical. Older receipts
+#   without a tag fall back to `mask` (entry fingerprint) and then to
+#   first-unconsumed order. A repoint is only restored when the original
+#   script still exists; a dead path removes that entry instead of
+#   resurrecting it.
 #   add ops match the recorded entry SNAPSHOT (deep-equal), removing the
 #   earliest exact match — an identical hook added later by the user is not
 #   eaten. connect ops remove only the recorded commands (one occurrence
@@ -39,17 +44,49 @@ const rec = load(p.join(AL, "guard", "config-changes.json"));
 const ops = rec?.ops || [];
 if (ops.length) {
   const consumed = new Set();   // per-hook identity: each op takes ONE hook
+  const maskOf = (en, j) => JSON.stringify({
+    ...en,
+    hooks: (en.hooks || []).map((x, k) => k === j ? { ...x, command: "@AL-MASK@" } : x),
+  });
   for (const op of ops) {
     const arr = cfg.hooks?.[op.evt] || [];
     if (op.op === "repoint") {
       const script = ((op.from || "").match(/^node\s+"?([^"\s]+)/) || [])[1];
       const restorable = script && fs.existsSync(script);
-      outer: for (const en of arr) {
-        for (const h of en.hooks || []) {
-          if (!consumed.has(h) && h.command === op.to) {
-            consumed.add(h); undone++;
-            if (restorable) h.command = op.from; else h.__drop = true;
-            break outer;
+      if (/# AL-HOOK:[0-9a-f]+$/.test(op.to || "")) {
+        // unique-tag identity: op.to matches exactly one hook globally
+        let hit = null;
+        outer: for (const en of arr) {
+          for (const h of en.hooks || []) {
+            if (h.command === op.to) { hit = h; break outer; }
+          }
+        }
+        if (hit) {
+          undone++;
+          if (restorable) hit.command = op.from; else hit.__drop = true;
+        } else console.log(`rollback: ${op.evt} — tagged hook not found (removed/edited?), left as-is`);
+      } else if (op.mask) {
+        // legacy fingerprint fallback (pre-tag receipts)
+        let hit = null;
+        outer: for (const en of arr) {
+          for (let j = 0; j < (en.hooks || []).length; j++) {
+            const h = en.hooks[j];
+            if (!consumed.has(h) && h.command === op.to && maskOf(en, j) === op.mask) { hit = h; break outer; }
+          }
+        }
+        if (hit) {
+          consumed.add(hit); undone++;
+          if (restorable) hit.command = op.from; else hit.__drop = true;
+        } else console.log(`rollback: ${op.evt} — recorded entry not found (edited since install?), left as-is`);
+      } else {
+        // legacy record without mask: first-unconsumed order (documented)
+        outer: for (const en of arr) {
+          for (const h of en.hooks || []) {
+            if (!consumed.has(h) && h.command === op.to) {
+              consumed.add(h); undone++;
+              if (restorable) h.command = op.from; else h.__drop = true;
+              break outer;
+            }
           }
         }
       }
