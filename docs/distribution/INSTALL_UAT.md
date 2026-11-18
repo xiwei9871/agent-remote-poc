@@ -85,6 +85,20 @@ cd agent-learning-macos
 | rollback.sh | `undid 11 package change(s)`（4 learning + 6 AM 钩 + 1 mcp）→ hooks 0、mcp 无 |
 | reinstall + uninstall.sh | 7 connect additions + 4 learning + 7 skills + guard dir 全清；mcp 无；记忆保留 |
 
+### 真机 UAT 执行方式（R5 复审要求 + 端口冲突实测结论）
+
+**daemon 端口事实（STATIC，已核实 0.9.32 源码）**：`3111` 在 cli.mjs 中硬编码（无 `AGENTMEMORY_PORT` 配置项），`AGENTMEMORY_URL` 只能改客户端指向，不能改 daemon 绑定端口。**同一台 Mac 的多用户账户无法各自拥有独立 daemon**；且测试账户的钩默认指向 `localhost:3111`——owner daemon 在跑时测试账户的记忆会串到 owner 库（隐私侧已补记到 PRIVACY_AND_PERMISSIONS.md）。
+
+**路径 A（推荐，复审建议）**：独立 Apple Silicon Mac 首装——无端口冲突，daemon 自启、双会话、回滚、卸载全部真实可测。
+
+**路径 B（同机可丢弃测试账户，顺序占用端口）**：
+1. owner 账户执行 `agentmemory stop`（释放 3111，owner 记忆数据不受影响——只是停服务）
+2. 测试账户：`install.sh --yes` → install 检测到 daemon 不健康 → 自行拉起（这同时验证 daemon 自启路径）
+3. `doctor.sh` → 两个全新 Devin Desktop 会话 → E03 合成事件 + SessionStart 召回 → `rollback.sh` → `uninstall.sh`
+4. 回到 owner 账户 `agentmemory` 重启 daemon
+
+**验收清单（会话内目视）**：新会话无 `Hook failed`；SessionStart 注入 lesson/context JSON；`pkill -f` 类合成命令被 block；普通命令放行。证据贴回本文件。
+
 ### 仍缺（COLLEAGUE_READY 门槛）
 
 - 独立 macOS **真账户**：Devin Desktop 装好的同事/测试账户首装（需 owner 建账户，GUI/凭据非我可达）
