@@ -1,0 +1,44 @@
+gate,item,requirement,status,evidence
+G0,baseline versions pinned,agentmemory 0.9.32 + node>=18 + macOS arm64 only,PASS,RELEASE_AUDIT.md §1 ACTUAL_RUN
+G0,issue8 read-only attribution,hook WARN 是否阻断分发,PARTIAL,WARN源非本包hook(exit0契约+health实证); UNATTRIBUTED（来源未确定）; doctor WARN扫描如实披露
+G0,docs contradictions cleared,hook 路径一律稳定 shim,PASS,WHAT_IS_INSTALLED.md
+G0,skills real path,~/.config/devin/skills/<name>/SKILL.md,PASS,官方 docs + ego-browser 实例核对
+G1,install.sh one-step,preflight/confirm/install/merge,PASS,e2e test1 ACTUAL_RUN(isolated HOME+stub deps)
+G1,--dry-run non-invasive,零写入,PASS,e2e test8
+G1,idempotent reinstall,二次安装零变更,PASS,e2e test2
+G1,stale-path migration,worktree/旧checkout路径重定向shim,PASS,e2e test3 (PR#7 P0 模式复用)
+G1,foreign hooks untouched,agentmemory/其他hook byte-identical,PASS,e2e test1+uninstall test
+G1,bundle hash verify,manifest.sha256 install时校验,PASS,e2e test5 corruption→FAIL
+G1,stable dir独立,~/.agent-learning 不依赖checkout,PASS,设计+e2e
+G1,pinned agentmemory,0.9.32 精确版本+版本断言,PASS,install.sh (npm路径e2e stub验证)
+G1,7 skills shipped,SKILL.md 标准frontmatter,PASS,e2e test1
+G1,auto-lesson marked experimental,不冒充稳定能力,PASS,CAPABILITY_MATRIX+README+skill标注
+G1,no hardcoded owner paths,无/Users/xiwei/brew/proxy假设,PASS,install.sh 全变量化+e2e独立HOME
+G2,isolated-HOME full lifecycle,装→幂等→迁移→doctor→回滚→卸载,PASS,8/8 e2e ACTUAL_RUN
+G2,data preservation on uninstall,memory DB 默认保留,PASS,e2e test7
+G2,clean physical machine,非Owner真机/真账户,NOT_TESTED,CLEAN_MACHINE_NOT_VERIFIED——故标 DISTRIBUTION_CANDIDATE
+G2,real new Desktop sessions,同事机2新会话无Hook failed+召回,NOT_TESTED,OWNER_VISUAL_UAT(开发机已证)
+G2,auto-lesson end-to-end,自发memory_lesson_save闭环,NOT_VERIFIED,实验功能 Stable 不含
+G3,tar.gz+sha256 artifact,可传输安装包,PASS,release/dist/ 28KB e9731c11
+G3,1-page中文手册,3步安装,PASS,README_同事快速开始.md
+G3,capability/privacy/troubleshoot docs,如实能力矩阵,PASS,docs/ 3 files
+G3,draft PR + SHA readback,git ls-remote,PASS,本提交
+verdict,,,,DISTRIBUTION_CANDIDATE(缺真机Gate;非COLLEAGUE_READY)
+P0-A,skills ownership,外来同名skill备份不覆盖/卸载仅删本包标记项,PASS,e2e P0-A test ACTUAL_RUN
+P0-B,differential rollback,仅撤销本包记录ops;安装后新增hooks/MCP保留,PASS,config-changes.json ops + e2e P0-B test
+P0-C,purge protection,--purge-data须打字DELETE-DATA确认,PASS,e2e P0-C test
+P0-D,real agentmemory wiring,真二进制connect --with-hooks验证6钩+MCP写入,PASS,ACTUAL_RUN 隔离HOME: mcpServers.agentmemory + 6 hooks(SessionStart/UserPromptSubmit/Pre/Post/Stop/SessionEnd)
+P0-E,doctor reliability,无rg依赖;核心故障FAIL不蒙混,PASS,e2e doctor-corruption test
+P0-F,tarball lifecycle,从最终tar.gz解压走完整生命周期,PASS,e2e P0-F test on shipped artifact
+P0-R2a,skill ownership complete,重装不覆盖用户修改/卸载仅删本包文件且恢复外来skill,PASS,e2e P0-A + 3×P0-R2 skill tests
+P0-R2b,rollback identity,两个旧hook映射同一shim后分别恢复原命令;add用快照深比较,PASS,e2e "two stale hooks" test
+P0-R2c,connect rollback,无agentmemory机器回滚移除全部6钩+mcpServers,PASS,connect-changes.json + e2e home4 test
+P0-R2d,doctor strictness,6条agentmemory钩逐事件核对;核心FAIL不蒙混,PASS,doctor.sh per-event check
+P0-R3a,hook unique identity,每条写入命令带AL-HOOK标签;重排/复制后回滚仍各回各原命令,PASS,e2e reorder counterexample (B回wt-B@entry0 A回wt-A@entry1)
+P0-R3b,install failure transaction,connect/merge/verify任一失败→config恢复安装前快照,PASS,e2e AM_FAIL_CONNECT (stderr restore + config逐字节还原 + exit1)
+P0-R3c,uninstall completeness,卸载同时移除connect新增的6钩+mcpServers(仅限本机无agentmemory情形),PASS,e2e home6 test
+P0-R3d,doctor dangling check,所有node命令引用的脚本路径必须存在;死路径FAIL,PASS,e2e dangling test
+P0-R4a,fresh-account connect detection,connect前建DEVIN_CONFIG_DIR否则真实connect报not-detected跳过接线,PASS,real 0.9.32 isolated-HOME UAT
+P0-R4b,no-config failure restore,无config机器connect失败→半成品config删除不留残档,PASS,e2e P0-R4 test
+P0-R4c,doctor quoted-path handling,真实connect的node引号路径剥引号验证存在性,PASS,real UAT doctor output
+P0-R4d,real-deps lifecycle,真实0.9.32二进制+隔离HOME:install/doctor/rollback/uninstall,PASS(除daemon共享机假象),INSTALL_UAT R4 section
