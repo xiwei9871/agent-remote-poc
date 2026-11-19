@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install.sh — Agent Learning Distribution V1 one-step installer (macOS, Devin).
+# install.sh — Agent Learning Distribution V1 one-step installer (Devin).
 #
 # What it does (with --dry-run it only prints):
-#   1. Preflight: macOS, arch, node>=18, npm, Devin config dir.
+#   1. Preflight: OS, arch, node>=18, npm, Devin config dir.
 #   2. npm i -g @agentmemory/agentmemory@<PINNED> (skipped with --no-deps).
 #   3. Start the agentmemory daemon if not healthy (`agentmemory`).
 #   4. `agentmemory connect devin` — official wiring of its 6 hooks + MCP.
@@ -40,7 +40,7 @@ DRY=0; YES=0; NODEPS=0
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;; --yes|-y) YES=1 ;; --no-deps) NODEPS=1 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown flag: $a" >&2; exit 2 ;;
   esac
 done
@@ -50,6 +50,17 @@ die()  { printf 'FAIL: %s\n' "$*" >&2
          [[ "$(type -t restore_config_on_failure 2>/dev/null)" == "function" ]] && restore_config_on_failure
          exit 1; }
 run()  { if [[ $DRY -eq 1 ]]; then say "  [dry] $*"; else "$@" || die "command failed: $*"; fi; }
+
+# sha256 without OS-specific tools: node >=18 is a hard prerequisite anyway,
+# so one code path serves macOS (shasum), Linux (sha256sum) and Git Bash.
+al_sha256() { node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+al_manifest_check() {
+  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs");const bad=[];
+    for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
+      const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
+    if(bad.length){console.error("hash mismatch: "+bad.join(","));process.exit(1);}')
+}
 
 say "== Agent Learning installer v$PKG_VERSION =="
 say "target: $GUARD_DIR  config: $DEVIN_CONFIG"
@@ -77,9 +88,21 @@ restore_config_on_failure() {
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then restore_config_on_failure; fi; exit $rc' ERR
 
 ## ---------- 1. preflight ----------
-[[ "$(uname -s)" == "Darwin" ]] || die "only macOS is supported (this package was validated on macOS arm64)."
+# Cross-platform gate: the package is pure bash+node, so there is no hard OS
+# refusal — but only macOS arm64 has completed runtime UAT. Everything else
+# proceeds with an explicit warning so the result is an informed choice.
+OS="$(uname -s)"
+case "$OS" in
+  Darwin) ;;
+  Linux)  warn "platform=Linux — portable code, runtime UAT was completed on macOS arm64 only (Linux = NOT_TESTED). Proceeding." ;;
+  MINGW*|MSYS*|CYGWIN*) warn "platform=$OS — Windows NOT_TESTED; Git Bash/WSL may work. Proceeding at your own risk." ;;
+  *)      warn "platform=$OS — unrecognised, NOT_TESTED. Proceeding at your own risk." ;;
+esac
 ARCH="$(uname -m)"
-[[ "$ARCH" == "arm64" ]] || warn "arch=$ARCH — validated only on arm64; proceeding at your own risk (Intel = NOT_TESTED)."
+case "$ARCH" in
+  arm64|aarch64) ;;
+  *) warn "arch=$ARCH — validated only on arm64/aarch64; proceeding at your own risk." ;;
+esac
 command -v node >/dev/null || die "node not found on PATH. Install Node >= 18 first (no sudo needed: https://nodejs.org)."
 NODE_MAJOR="$(node -e 'process.stdout.write(String(process.versions.node.split(".")[0]))')"
 (( NODE_MAJOR >= 18 )) || die "node $(node --version) < 18."
@@ -166,7 +189,7 @@ done
 run cp "$HERE/hooks/manifest.sha256" "$GUARD_DIR/manifest.sha256"
 if [[ $DRY -eq 0 ]]; then printf '%s\n' "$PKG_VERSION" > "$GUARD_DIR/VERSION"; fi
 if [[ $DRY -eq 0 ]]; then
-  (cd "$GUARD_DIR" && shasum -a256 -c manifest.sha256 --quiet) \
+  al_manifest_check "$GUARD_DIR" \
     || die "installed bundle hash mismatch — refusing to wire hooks to unverified code."
 fi
 
@@ -183,8 +206,11 @@ const CONFIG = process.env.CONFIG, SHIM = process.env.SHIM, DRY = process.env.DR
 const raw = fs.existsSync(CONFIG) ? fs.readFileSync(CONFIG, "utf8") : "{}\n";
 const cfg = JSON.parse(raw.trim() || "{}");
 cfg.hooks = cfg.hooks || {};
-const CMD = { "guard/guard.mjs": `node ${SHIM} scripts/learning/guard/guard.mjs`,
-              "session-context.mjs": `node ${SHIM} scripts/learning/session-context.mjs` };
+// Quoted shim path: agentmemory itself writes `node "/abs/path"` commands,
+// and quoting is what keeps the command correct when $HOME contains spaces
+// (common on Windows profiles and some macOS accounts).
+const CMD = { "guard/guard.mjs": `node "${SHIM}" scripts/learning/guard/guard.mjs`,
+              "session-context.mjs": `node "${SHIM}" scripts/learning/session-context.mjs` };
 const relRe = /scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
 // P0-R3 unique identity: every command WE write carries a per-hook tag
 // `# AL-HOOK:<hex>`. Under `sh -c` it is a comment; under exec-array it is
@@ -194,7 +220,13 @@ const relRe = /scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
 // mapped to the same shim — the R3 counterexample that position-pairing
 // could not solve.
 const tag = () => ` # AL-HOOK:${require("node:crypto").randomBytes(4).toString("hex")}`;
-const isOurs = (c, sig) => c === CMD[sig] || c.startsWith(CMD[sig] + " # AL-HOOK:");
+// Legacy installs used the unquoted `node ${SHIM}` form — still recognise it
+// as ours so an upgrade does not repoint-and-retag already-correct hooks.
+const isOurs = (c, sig) => {
+  const unq = CMD[sig].replaceAll('"', "");
+  return c === CMD[sig] || c.startsWith(CMD[sig] + " # AL-HOOK:") ||
+         c === unq || c.startsWith(unq + " # AL-HOOK:");
+};
 const WANT = [
   { evt: "SessionStart", sig: "session-context.mjs", matcher: null },
   { evt: "PreToolUse",  sig: "guard/guard.mjs", matcher: "^(exec|kill_shell|write_to_process|write|edit|apply_patch)$" },
@@ -249,7 +281,7 @@ const flat = o => { const out = []; for (const [e, a] of Object.entries(o.hooks 
   (a || []).forEach((en, i) => (en.hooks || []).forEach((h, j) => out.push([`${e}[${i}].hooks[${j}]`, h.command || ""]))); return new Map(out); };
 const before = flat(JSON.parse(raw)), now = flat(after);
 let ok = true;
-for (const [k, v] of now) if (relRe.test(v) && !v.startsWith(`node ${SHIM}`)) ok = false;
+for (const [k, v] of now) if (relRe.test(v) && !v.startsWith(`node "${SHIM}"`) && !v.startsWith(`node ${SHIM}`)) ok = false;
 for (const [k, v] of before) {
   const nv = now.get(k);
   if (nv !== v && !(relRe.test(v))) { ok = false; console.error("unexpected foreign change:", k); }
@@ -271,7 +303,7 @@ for d in "$HERE"/skills/*/; do
     # P0-R2: ours but user-modified since install → preserve their edit, then
     # refresh. Never silently overwrite a colleague's modification.
     recorded="$(cat "$dst/.agent-learning-owned")"
-    current="$(shasum -a256 "$dst/SKILL.md" 2>/dev/null | awk '{print $1}')"
+    current="$(al_sha256 "$dst/SKILL.md" 2>/dev/null)"
     if [[ "$current" != "$recorded" ]]; then
       aside="$dst.user-modified-$(date +%Y%m%d%H%M%S)"
       warn "skill '$name' was modified after install — preserving it as $aside"
@@ -291,7 +323,7 @@ for d in "$HERE"/skills/*/; do
   run mkdir -p "$dst"
   run cp "$d/SKILL.md" "$dst/SKILL.md"
   if [[ $DRY -eq 0 ]]; then
-    shasum -a256 "$dst/SKILL.md" | awk '{print $1}' > "$dst/.agent-learning-owned"
+    al_sha256 "$dst/SKILL.md" > "$dst/.agent-learning-owned"
   fi
 done
 
@@ -299,7 +331,7 @@ done
 if [[ $DRY -eq 0 ]]; then
   mkdir -p "$GUARD_DIR"
   cat > "$GUARD_DIR/install-receipt.json" <<EOF
-{"package":"agent-learning-macos","version":"$PKG_VERSION","installed_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+{"package":"agent-learning","version":"$PKG_VERSION","installed_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)",
  "agentmemory":"${AGENTMEMORY_VERSION}$( [[ $NODEPS -eq 1 ]] && echo ' (not installed: --no-deps)')","guard_dir":"$GUARD_DIR","config":"$DEVIN_CONFIG","skills_dir":"$DEVIN_SKILLS_DIR"}
 EOF
 fi

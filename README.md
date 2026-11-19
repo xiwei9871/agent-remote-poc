@@ -74,12 +74,15 @@ cd agent-remote-poc
 - 版本：发行包 **1.0.0**（钉死 `agentmemory@0.9.32`）。
 - 包的本体（7 个 SKILL.md、guard/session-context 的 Node 脚本、策略
   JSON）是纯文件与 Node 代码，没有平台特定逻辑。
-- **安装/自检脚本当前验证范围**：macOS **arm64** + Devin 用户级配置的
-  完整安装/自检/回滚/卸载，E03 阻断实测生效。
-- **未验证**：Intel Mac、Linux、Windows、其他 Agent（Codex/Claude Code
-  等）。`install.sh` 在非 macOS 上目前会直接拒绝执行——不是不想支持，
-  是脚本里用了 `shasum`（BSD）等 macOS 工具且未经真机验证，等真机
-  测过再放开，不给假承诺。
+- **安装/自检脚本已跨平台**：install/doctor/rollback/uninstall 只依赖
+  bash + Node ≥18（哈希计算全部走 Node，无 `shasum`/`sha256sum` 等
+  平台工具），macOS / Linux（Ubuntu、Red Hat 等）/ Windows Git Bash
+  均可执行；非 macOS 平台给出警告但继续安装。
+- **已验证**：macOS **arm64** 上完整安装/自检/回滚/卸载，E03 阻断实测
+  生效。
+- **未验证**：Linux、Windows（Git Bash）的真实运行——脚本可移植但尚无
+  真机 UAT，doctor 会在异常时如实 FAIL。其他 Agent（Codex/Claude Code
+  等）也不在支持范围。
 - **实验功能**：自动纠错→自动沉淀 Lesson→跨会话防复发的闭环目前标记
   EXPERIMENTAL，未纳入稳定承诺。
 - 已知边界：AgentMemory daemon 端口 3111 硬编码——同一台机器多账户会

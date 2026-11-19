@@ -51,7 +51,9 @@ if (ops.length) {
   for (const op of ops) {
     const arr = cfg.hooks?.[op.evt] || [];
     if (op.op === "repoint") {
-      const script = ((op.from || "").match(/^node\s+"?([^"\s]+)/) || [])[1];
+      // quoted paths may contain spaces — try quoted form first, then bare
+      const m = (op.from || "").match(/^node\s+"([^"]+)"/) || (op.from || "").match(/^node\s+(\S+)/);
+      const script = m && m[1];
       const restorable = script && fs.existsSync(script);
       if (/# AL-HOOK:[0-9a-f]+$/.test(op.to || "")) {
         // unique-tag identity: op.to matches exactly one hook globally

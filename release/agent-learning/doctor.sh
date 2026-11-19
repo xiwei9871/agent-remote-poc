@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # doctor.sh — verify an Agent Learning installation actually works.
-# Uses only POSIX tools + node (no ripgrep dependency — clean Macs may lack it).
+# Uses only POSIX tools + node (no ripgrep or BSD-only tool dependency).
 # Exit 0 = PASS, 1 = FAIL, 2 = PARTIAL (core works, non-core limitations only).
 set -uo pipefail
+
+# node-based manifest check — no shasum/sha256sum dependency (Linux, Git Bash).
+al_manifest_check() {
+  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs");const bad=[];
+    for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
+      const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
+    if(bad.length){console.error("hash mismatch: "+bad.join(","));process.exit(1);}')
+}
 
 AL_HOME="${AGENT_LEARNING_HOME:-$HOME/.agent-learning}"
 GUARD_DIR="$AL_HOME/guard"
@@ -26,7 +35,9 @@ if command -v node >/dev/null && node -e 'process.exit(Number(process.versions.n
 else bad "node >=18 missing — install Node first"; fi
 
 # 2. bundle integrity (core — wrong code must FAIL)
-if [[ -f "$GUARD_DIR/manifest.sha256" ]] && (cd "$GUARD_DIR" && shasum -a256 -c manifest.sha256 --quiet) 2>/dev/null; then
+if ! command -v node >/dev/null; then
+  bad "cannot verify guard bundle (node missing)"
+elif [[ -f "$GUARD_DIR/manifest.sha256" ]] && al_manifest_check "$GUARD_DIR" 2>/dev/null; then
   ok "guard bundle sha256 verified"
 else bad "guard bundle missing or hash mismatch in $GUARD_DIR — re-run install.sh"; fi
 
@@ -38,7 +49,8 @@ const re=/scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
 let shimmed=0, stale=0, am=0;
 for(const [e,a] of Object.entries(cfg.hooks||{})) (a||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
   const c=h.command||"";
-  if(re.test(c)) c.startsWith(`node ${process.env.SHIM}`)?shimmed++:stale++;
+  const p=`node ${process.env.SHIM}`,pq=`node "${process.env.SHIM}"`;
+  if(re.test(c)) (c.startsWith(p)||c.startsWith(pq))?shimmed++:stale++;
   if(/agentmemory/.test(c)) am++;
 }));
 console.log(`shimmed=${shimmed} stale=${stale} agentmemory_hooks=${am}`);

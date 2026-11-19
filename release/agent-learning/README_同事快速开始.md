@@ -1,19 +1,20 @@
-# Agent Learning — 同事快速开始（macOS + Devin）
+# Agent Learning — 同事快速开始（Devin）
 
 让 Devin 在新会话里自动记起你纠正过的错误，并拦截已知的高风险操作。
 3 步完成，全程不需要读内部文档。
 
 ## 你需要准备
 
-- macOS（Apple Silicon 已验证；Intel 未测试）
-- Node.js ≥ 18（`node --version` 能看到即可，不需要 sudo）
+- 一台装了 bash + Node.js ≥ 18 的机器（`node --version` 能看到即可，
+  不需要 sudo）。macOS 已实测；Linux 与 Windows（Git Bash/WSL）可运行
+  但尚未真机验证
 - Devin CLI / Desktop 已登录过一次
 
 ## 3 步安装
 
 ```bash
 # 1. 解压安装包后进入目录
-cd agent-learning-macos
+cd agent-learning
 
 # 2. 看一眼将要改什么（可选，不写任何东西）
 ./install.sh --dry-run
