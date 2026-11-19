@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PKG = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "release", "agent-learning-macos");
+const PKG = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "release", "agent-learning");
 const ROOT = mkdtempSync(join(tmpdir(), "dist-e2e-"));
 const HOME = join(ROOT, "home");
 const BIN = join(ROOT, "bin");                       // stub dir on PATH
@@ -55,7 +55,7 @@ const env = () => ({ ...process.env, HOME, PATH: `${BIN}:${process.env.PATH}`,
 const sh = (script, args = []) => spawnSync("bash", [join(PKG, script), ...args], { env: env(), encoding: "utf8", timeout: 30000 });
 const cfg = () => JSON.parse(readFileSync(CONFIG, "utf8"));
 const cmds = () => { const c = cfg(); const o = []; for (const a of Object.values(c.hooks || {})) a.forEach(e => (e.hooks || []).forEach(h => o.push(h.command || ""))); return o; };
-const SHIMCMD = `node ${GUARD}/hook-shim.mjs`;
+const SHIMCMD = `node "${GUARD}/hook-shim.mjs"`;
 
 test("install: bundle + 4 hooks + skills land, deps invoked, receipt written", () => {
   mkdirSync(join(HOME, ".config", "devin"), { recursive: true });
@@ -326,7 +326,7 @@ test("P0-F: lifecycle works from the shipped tar.gz, not just the source tree", 
   const X = join(ROOT, "extracted"); mkdirSync(X, { recursive: true });
   const t = spawnSync("tar", ["-xzf", join(PKG, "..", "dist", TARBALL), "-C", X], { encoding: "utf8" });
   if (t.status !== 0) throw new Error(`untar failed: ${t.stderr}`);
-  const XPKG = join(X, "agent-learning-macos");
+  const XPKG = join(X, "agent-learning");
   const HOME3 = join(ROOT, "home3"); mkdirSync(HOME3, { recursive: true });
   const e3 = { ...process.env, HOME: HOME3, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(HOME3, ".agent-learning") };
   const run = (s, a = []) => spawnSync("bash", [join(XPKG, s), ...a], { env: e3, encoding: "utf8", timeout: 30000 });
@@ -346,4 +346,22 @@ test("dry-run writes nothing", () => {
   if (existsSync(join(HOME2, ".agent-learning")) || existsSync(join(HOME2, ".config", "devin", "config.json")))
     throw new Error("dry-run wrote files");
   if (!/DRY-RUN complete/.test(r.stdout)) throw new Error("missing dry-run marker");
+});
+
+test("X-PLAT: HOME containing spaces gets quoted shim commands and doctor passes", () => {
+  // Windows profiles and some macOS accounts have spaces in $HOME — an
+  // unquoted `node /path with space/shim` command would split at the space
+  // and die with MODULE_NOT_FOUND, the exact failure this package exists to
+  // kill. Every command we write must quote the shim path.
+  const HOME4 = join(ROOT, "home with space"); mkdirSync(HOME4, { recursive: true });
+  const e4 = { ...process.env, HOME: HOME4, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(HOME4, ".agent-learning") };
+  const r = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e4, encoding: "utf8", timeout: 30000 });
+  if (r.status !== 0) throw new Error(`install failed under spaced HOME: ${r.stderr}`);
+  const c4 = JSON.parse(readFileSync(join(HOME4, ".config", "devin", "config.json"), "utf8"));
+  const ours = []; for (const a of Object.values(c4.hooks || {})) a.forEach(e => (e.hooks || []).forEach(h => { if ((h.command || "").includes("hook-shim")) ours.push(h.command); }));
+  if (ours.length !== 4) throw new Error(`expected 4 shim hooks, got ${ours.length}`);
+  const unq = ours.filter(x => !x.startsWith(`node "${join(HOME4, ".agent-learning", "guard", "hook-shim.mjs")}"`));
+  if (unq.length) throw new Error(`unquoted shim path under spaced HOME: ${unq[0]}`);
+  const d4 = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e4, encoding: "utf8", timeout: 30000 });
+  if (d4.status === 1) throw new Error(`doctor FAIL under spaced HOME:\n${d4.stdout}\n${d4.stderr}`);
 });

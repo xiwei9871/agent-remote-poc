@@ -1,13 +1,15 @@
-# Agent Learning for Devin（macOS 一键部署）
+# Agent Learning — Devin 全局记忆与防复发技能包
 
-给你的 Devin 装上**长期记忆 + 经验召回 + 防复发护栏**：装完之后，Devin
+给 Devin agent 装上**长期记忆 + 经验召回 + 防复发护栏**：装完之后，Devin
 会记住以前踩过的坑、在新会话里自动想起相关经验，并对已知的危险操作
 （比如广谱 `pkill` 杀进程）在动手前直接拦下。
 
-> 面向同事的使用文档。仓库里的 `docs/`、`release/` 是研发与发行材料，
+> 面向同事的使用文档。这是一套 agent 级技能工具组合（Skills + Hooks +
+> Guard），不是平台软件——本体跨平台，安装/自检脚本当前的验证范围见
+> 「版本与限制」。仓库里的 `docs/`、`release/` 是研发与发行材料，
 > 正常使用不需要阅读。
 
-## 一键安装（macOS + Devin）
+## 一键安装
 
 ```bash
 git clone https://github.com/xiwei9871/agent-remote-poc.git
@@ -69,12 +71,19 @@ cd agent-remote-poc
 
 ## 版本与限制
 
-- 版本：`agent-learning-macos` **1.0.0**（钉死 `agentmemory@0.9.32`）。
-- 已验证：macOS **arm64** + Devin 用户级配置的完整安装/自检/回滚/卸载，
-  E03 阻断实测生效。
-- **未验证**：Intel Mac、Linux/Windows、其他 Agent（Codex/Claude Code
-  等）、多台 Mac 间记忆同步（不支持也不计划）。
+- 版本：发行包 **1.0.0**（钉死 `agentmemory@0.9.32`）。
+- 包的本体（7 个 SKILL.md、guard/session-context 的 Node 脚本、策略
+  JSON）是纯文件与 Node 代码，没有平台特定逻辑。
+- **安装/自检脚本已跨平台**：install/doctor/rollback/uninstall 只依赖
+  bash + Node ≥18（哈希计算全部走 Node，无 `shasum`/`sha256sum` 等
+  平台工具），macOS / Linux（Ubuntu、Red Hat 等）/ Windows Git Bash
+  均可执行；非 macOS 平台给出警告但继续安装。
+- **已验证**：macOS **arm64** 上完整安装/自检/回滚/卸载，E03 阻断实测
+  生效。
+- **未验证**：Linux、Windows（Git Bash）的真实运行——脚本可移植但尚无
+  真机 UAT，doctor 会在异常时如实 FAIL。其他 Agent（Codex/Claude Code
+  等）也不在支持范围。
 - **实验功能**：自动纠错→自动沉淀 Lesson→跨会话防复发的闭环目前标记
   EXPERIMENTAL，未纳入稳定承诺。
-- 已知边界：AgentMemory daemon 端口 3111 硬编码——同一台 Mac 多账户会
-  共享 daemon，请每台 Mac 只用一个主要账户运行本系统。
+- 已知边界：AgentMemory daemon 端口 3111 硬编码——同一台机器多账户会
+  共享 daemon，请每台机器只用一个主要账户运行本系统。
