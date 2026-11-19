@@ -405,3 +405,18 @@ test("X-PLAT: doctor fails on undeclared script inside guard dir", () => {
   const d = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e, encoding: "utf8", timeout: 30000 });
   if (d.status !== 1 || !/hash|manifest|bundle/.test(d.stdout)) throw new Error(`undeclared script not flagged:\n${d.stdout}`);
 });
+
+test("X-PLAT: doctor fails on malformed or duplicate manifest lines", () => {
+  // Reviewer counterexample: four valid records + one malformed line + one
+  // duplicate valid record must NOT pass — the checker previously skipped
+  // non-matching lines and tolerated duplicates.
+  const H = join(ROOT, "home-badmanifest"); mkdirSync(H, { recursive: true });
+  const e = { ...process.env, HOME: H, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(H, ".agent-learning") };
+  const ir = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e, encoding: "utf8", timeout: 30000 });
+  if (ir.status !== 0) throw new Error(`install failed: ${ir.stderr}`);
+  const mp = join(H, ".agent-learning", "guard", "manifest.sha256");
+  const lines = readFileSync(mp, "utf8").split("\n").filter(Boolean);
+  writeFileSync(mp, lines.join("\n") + "\n" + "not-a-hash-line\n" + lines[0] + "\n");
+  const d = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e, encoding: "utf8", timeout: 30000 });
+  if (d.status !== 1 || !/bundle|manifest/i.test(d.stdout)) throw new Error(`malformed/duplicate manifest lines not flagged:\n${d.stdout}`);
+});

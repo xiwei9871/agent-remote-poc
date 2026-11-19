@@ -59,7 +59,10 @@ al_manifest_check() {
     const WANT=["hook-shim.mjs","bin/guard.mjs","bin/policy.json","bin/session-context.mjs"];
     const declared=[],bad=[];
     for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
-      const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      if(!l.trim())continue;
+      const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/);
+      if(!m){bad.push("malformed manifest line: "+l.slice(0,40));continue;}
+      if(declared.includes(m[2]))bad.push("duplicate manifest entry: "+m[2]);
       declared.push(m[2]);
       if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
     const miss=WANT.filter(w=>!declared.includes(w)),extra=declared.filter(d=>!WANT.includes(d));
