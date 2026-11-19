@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
 # doctor.sh — verify an Agent Learning installation actually works.
-# Uses only POSIX tools + node (no ripgrep dependency — clean Macs may lack it).
+# Uses only POSIX tools + node (no ripgrep or BSD-only tool dependency).
 # Exit 0 = PASS, 1 = FAIL, 2 = PARTIAL (core works, non-core limitations only).
 set -uo pipefail
+
+# node-based manifest check — no shasum/sha256sum dependency (Linux, Git Bash).
+# Strict file list: the manifest must declare EXACTLY the expected bundle
+# files, and no undeclared executable script may sit in the install dir.
+al_manifest_check() {
+  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs"),p=require("node:path");
+    const WANT=["hook-shim.mjs","bin/guard.mjs","bin/policy.json","bin/session-context.mjs"];
+    const declared=[],bad=[];
+    for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
+      const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      declared.push(m[2]);
+      if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
+    const miss=WANT.filter(w=>!declared.includes(w)),extra=declared.filter(d=>!WANT.includes(d));
+    if(miss.length)bad.push("missing from manifest: "+miss.join(","));
+    if(extra.length)bad.push("unexpected in manifest: "+extra.join(","));
+    for(const dir of [".","bin"]){ if(!f.existsSync(dir))continue;
+      for(const n of f.readdirSync(dir)){
+      const rel=dir==="."?n:dir+"/"+n;
+      if(/\.(mjs|cjs|js)$/.test(n)&&f.statSync(rel).isFile()&&!declared.includes(rel))bad.push("undeclared script: "+rel);}}
+    if(bad.length){console.error("manifest violation: "+bad.join(" | "));process.exit(1);}')
+}
 
 AL_HOME="${AGENT_LEARNING_HOME:-$HOME/.agent-learning}"
 GUARD_DIR="$AL_HOME/guard"
@@ -26,7 +47,9 @@ if command -v node >/dev/null && node -e 'process.exit(Number(process.versions.n
 else bad "node >=18 missing — install Node first"; fi
 
 # 2. bundle integrity (core — wrong code must FAIL)
-if [[ -f "$GUARD_DIR/manifest.sha256" ]] && (cd "$GUARD_DIR" && shasum -a256 -c manifest.sha256 --quiet) 2>/dev/null; then
+if ! command -v node >/dev/null; then
+  bad "cannot verify guard bundle (node missing)"
+elif [[ -f "$GUARD_DIR/manifest.sha256" ]] && al_manifest_check "$GUARD_DIR" 2>/dev/null; then
   ok "guard bundle sha256 verified"
 else bad "guard bundle missing or hash mismatch in $GUARD_DIR — re-run install.sh"; fi
 
@@ -38,7 +61,8 @@ const re=/scripts\/learning\/(guard\/guard\.mjs|session-context\.mjs)/;
 let shimmed=0, stale=0, am=0;
 for(const [e,a] of Object.entries(cfg.hooks||{})) (a||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
   const c=h.command||"";
-  if(re.test(c)) c.startsWith(`node ${process.env.SHIM}`)?shimmed++:stale++;
+  const p=`node ${process.env.SHIM}`,pq=`node "${process.env.SHIM}"`;
+  if(re.test(c)) (c.startsWith(p)||c.startsWith(pq))?shimmed++:stale++;
   if(/agentmemory/.test(c)) am++;
 }));
 console.log(`shimmed=${shimmed} stale=${stale} agentmemory_hooks=${am}`);
@@ -71,11 +95,17 @@ const fs=require("node:fs");
 let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}catch{console.log("NA");process.exit(0)}
 const missing=[];
 for(const [e,arr] of Object.entries(cfg.hooks||{})) (arr||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
-  const m=(h.command||"").match(/^node\s+(\S+)/);
-  if(!m) return;
-  // real `agentmemory connect` writes quoted paths: node "/abs/path/x.mjs"
-  const p1=m[1].split(String.fromCharCode(34)).join('').split(String.fromCharCode(39)).join('');
-  if(!fs.existsSync(p1)) missing.push(e+':'+p1);
+  // double-quoted form first — a path with spaces must be taken whole, not
+  // cut at the first space (the false-PASS where only the space-prefix
+  // exists). Written without a regex on purpose: literal quote chars inside
+  // a $(...) heredoc must stay balanced, so the dq constant stands in.
+  const c2=(h.command||"").trim();
+  if(!/^node\s/.test(c2)) return;
+  const rest=c2.replace(/^node\s+/,"");
+  const dq=String.fromCharCode(34);
+  const p1=rest.startsWith(dq)?rest.slice(1).split(dq)[0]:rest.split(/\s/)[0];
+  // isFile: a directory would also be a broken hook target
+  if(!fs.existsSync(p1)||!fs.statSync(p1).isFile()) missing.push(e+':'+p1);
 }));
 console.log(missing.length?missing.join(";"):"none");
 NODE

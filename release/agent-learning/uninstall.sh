@@ -11,6 +11,9 @@ DEVIN_CONFIG_DIR="${DEVIN_CONFIG_DIR:-$(dirname "$DEVIN_CONFIG")}"
 DEVIN_SKILLS_DIR="${DEVIN_SKILLS_DIR:-$DEVIN_CONFIG_DIR/skills}"
 SKILLS="memory-recall error-triage self-repair lesson-distiller lesson-validator evidence-verifier learning-health"
 
+# sha256 via node — no shasum(BSD)/sha256sum(GNU) dependency.
+al_sha256() { node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$1"; }
+
 REMOVE_AM=0; PURGE=0
 for a in "$@"; do case "$a" in
   --remove-agentmemory) REMOVE_AM=1 ;; --purge-data) PURGE=1 ;; -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
@@ -75,7 +78,7 @@ for s in $SKILLS; do
     continue
   fi
   recorded="$(cat "$dst/.agent-learning-owned")"
-  current="$(shasum -a256 "$dst/SKILL.md" 2>/dev/null | awk '{print $1}')"
+  current="$(al_sha256 "$dst/SKILL.md" 2>/dev/null)"
   if [[ "$current" == "$recorded" ]]; then
     # remove ONLY the two files we put there; any other files are the
     # colleague's and must survive

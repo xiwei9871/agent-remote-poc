@@ -33,16 +33,15 @@
 
 ## 交付物
 
-- 源码包：`release/agent-learning-macos/`（install/doctor/rollback/uninstall + hooks bundle + skills + docs）
-- 可传输归档：`release/dist/agent-learning-macos-1.0.0.tar.gz`（28KB）
-  - SHA256：`e9731c11fce33064ba9f8ee0014eaa80b85b1cde6c3b1e9b3790bf2329174a87`
-  - 校验文件：`agent-learning-macos-1.0.0.tar.gz.sha256`
+- 源码包：`release/agent-learning/`（install/doctor/rollback/uninstall + hooks bundle + skills + docs）
+- 可传输归档：`release/dist/agent-learning-1.0.0.tar.gz`（28KB）
+  - 校验文件：`agent-learning-1.0.0.tar.gz.sha256`（以该文件内哈希为准）
 
 ## 同事真正要跑的唯一命令序列
 
 ```bash
-tar -xzf agent-learning-macos-1.0.0.tar.gz
-cd agent-learning-macos
+tar -xzf agent-learning-1.0.0.tar.gz
+cd agent-learning
 ./install.sh --yes && ./doctor.sh
 ```
 
