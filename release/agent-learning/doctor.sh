@@ -5,12 +5,24 @@
 set -uo pipefail
 
 # node-based manifest check — no shasum/sha256sum dependency (Linux, Git Bash).
+# Strict file list: the manifest must declare EXACTLY the expected bundle
+# files, and no undeclared executable script may sit in the install dir.
 al_manifest_check() {
-  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs");const bad=[];
+  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs"),p=require("node:path");
+    const WANT=["hook-shim.mjs","bin/guard.mjs","bin/policy.json","bin/session-context.mjs"];
+    const declared=[],bad=[];
     for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
       const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      declared.push(m[2]);
       if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
-    if(bad.length){console.error("hash mismatch: "+bad.join(","));process.exit(1);}')
+    const miss=WANT.filter(w=>!declared.includes(w)),extra=declared.filter(d=>!WANT.includes(d));
+    if(miss.length)bad.push("missing from manifest: "+miss.join(","));
+    if(extra.length)bad.push("unexpected in manifest: "+extra.join(","));
+    for(const dir of [".","bin"]){ if(!f.existsSync(dir))continue;
+      for(const n of f.readdirSync(dir)){
+      const rel=dir==="."?n:dir+"/"+n;
+      if(/\.(mjs|cjs|js)$/.test(n)&&f.statSync(rel).isFile()&&!declared.includes(rel))bad.push("undeclared script: "+rel);}}
+    if(bad.length){console.error("manifest violation: "+bad.join(" | "));process.exit(1);}')
 }
 
 AL_HOME="${AGENT_LEARNING_HOME:-$HOME/.agent-learning}"
@@ -83,11 +95,17 @@ const fs=require("node:fs");
 let cfg; try{cfg=JSON.parse(fs.readFileSync(process.env.DEVIN_CONFIG,"utf8"))}catch{console.log("NA");process.exit(0)}
 const missing=[];
 for(const [e,arr] of Object.entries(cfg.hooks||{})) (arr||[]).forEach(en=>(en.hooks||[]).forEach(h=>{
-  const m=(h.command||"").match(/^node\s+(\S+)/);
-  if(!m) return;
-  // real `agentmemory connect` writes quoted paths: node "/abs/path/x.mjs"
-  const p1=m[1].split(String.fromCharCode(34)).join('').split(String.fromCharCode(39)).join('');
-  if(!fs.existsSync(p1)) missing.push(e+':'+p1);
+  // double-quoted form first — a path with spaces must be taken whole, not
+  // cut at the first space (the false-PASS where only the space-prefix
+  // exists). Written without a regex on purpose: literal quote chars inside
+  // a $(...) heredoc must stay balanced, so the dq constant stands in.
+  const c2=(h.command||"").trim();
+  if(!/^node\s/.test(c2)) return;
+  const rest=c2.replace(/^node\s+/,"");
+  const dq=String.fromCharCode(34);
+  const p1=rest.startsWith(dq)?rest.slice(1).split(dq)[0]:rest.split(/\s/)[0];
+  // isFile: a directory would also be a broken hook target
+  if(!fs.existsSync(p1)||!fs.statSync(p1).isFile()) missing.push(e+':'+p1);
 }));
 console.log(missing.length?missing.join(";"):"none");
 NODE

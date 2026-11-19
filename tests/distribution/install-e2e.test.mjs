@@ -365,3 +365,43 @@ test("X-PLAT: HOME containing spaces gets quoted shim commands and doctor passes
   const d4 = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e4, encoding: "utf8", timeout: 30000 });
   if (d4.status === 1) throw new Error(`doctor FAIL under spaced HOME:\n${d4.stdout}\n${d4.stderr}`);
 });
+
+test("X-PLAT: dangling check parses quoted space paths (negative + positive)", () => {
+  // Reviewer counterexample: node "/tmp/fake with space/x.mjs" must not be
+  // satisfied by the bare prefix /tmp/fake existing — it must FAIL on the
+  // real quoted path. Positive half: an existing quoted spaced file passes.
+  const H = join(ROOT, "home-dangle"); mkdirSync(H, { recursive: true });
+  const e = { ...process.env, HOME: H, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(H, ".agent-learning") };
+  const ir = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e, encoding: "utf8", timeout: 30000 });
+  if (ir.status !== 0) throw new Error(`install failed: ${ir.stderr}`);
+  const cfgp = join(H, ".config", "devin", "config.json");
+  const c = JSON.parse(readFileSync(cfgp, "utf8"));
+  const fakePrefix = join(ROOT, "fake");                 // exists as a DIR — the old bug's false-PASS trap
+  mkdirSync(fakePrefix, { recursive: true });
+  const missingPath = join(ROOT, "fake with space", "missing.mjs");  // does NOT exist
+  c.hooks.UserPromptSubmit.push({ hooks: [{ type: "command", command: `node "${missingPath}"` }] });
+  writeFileSync(cfgp, JSON.stringify(c, null, 2));
+  const d = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e, encoding: "utf8", timeout: 30000 });
+  if (!/dangling hook scripts/.test(d.stdout)) throw new Error(`quoted missing path not flagged (space-prefix trap):\n${d.stdout}`);
+  // positive counterpart: quoted spaced path that EXISTS must not be flagged
+  const realDir = join(ROOT, "fake with space"); mkdirSync(realDir, { recursive: true });
+  const real = join(realDir, "real.mjs"); writeFileSync(real, "// ok\n");
+  const c2 = JSON.parse(readFileSync(cfgp, "utf8"));
+  c2.hooks.UserPromptSubmit = c2.hooks.UserPromptSubmit.filter(en => !(en.hooks || []).some(h => h.command === `node "${missingPath}"`));
+  c2.hooks.UserPromptSubmit.push({ hooks: [{ type: "command", command: `node "${real}"` }] });
+  writeFileSync(cfgp, JSON.stringify(c2, null, 2));
+  const d2 = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e, encoding: "utf8", timeout: 30000 });
+  if (/dangling hook scripts/.test(d2.stdout)) throw new Error(`existing quoted spaced path wrongly flagged:\n${d2.stdout}`);
+});
+
+test("X-PLAT: doctor fails on undeclared script inside guard dir", () => {
+  // Strict file list: hash-verified files are not enough — an extra .mjs
+  // dropped into the bundle must be flagged (sneaky-script injection).
+  const H = join(ROOT, "home-undeclared"); mkdirSync(H, { recursive: true });
+  const e = { ...process.env, HOME: H, PATH: `${BIN}:${process.env.PATH}`, AGENT_LEARNING_HOME: join(H, ".agent-learning") };
+  const ir = spawnSync("bash", [join(PKG, "install.sh"), "--yes"], { env: e, encoding: "utf8", timeout: 30000 });
+  if (ir.status !== 0) throw new Error(`install failed: ${ir.stderr}`);
+  writeFileSync(join(H, ".agent-learning", "guard", "evil.mjs"), "// not in manifest\n");
+  const d = spawnSync("bash", [join(PKG, "doctor.sh")], { env: e, encoding: "utf8", timeout: 30000 });
+  if (d.status !== 1 || !/hash|manifest|bundle/.test(d.stdout)) throw new Error(`undeclared script not flagged:\n${d.stdout}`);
+});

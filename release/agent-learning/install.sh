@@ -55,11 +55,21 @@ run()  { if [[ $DRY -eq 1 ]]; then say "  [dry] $*"; else "$@" || die "command f
 # so one code path serves macOS (shasum), Linux (sha256sum) and Git Bash.
 al_sha256() { node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$1"; }
 al_manifest_check() {
-  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs");const bad=[];
+  (cd "$1" && node -e 'const c=require("node:crypto"),f=require("node:fs"),p=require("node:path");
+    const WANT=["hook-shim.mjs","bin/guard.mjs","bin/policy.json","bin/session-context.mjs"];
+    const declared=[],bad=[];
     for(const l of f.readFileSync("manifest.sha256","utf8").split("\n")){
       const m=l.match(/^([0-9a-f]{64}) [ *](.+)$/); if(!m)continue;
+      declared.push(m[2]);
       if(!f.existsSync(m[2])||c.createHash("sha256").update(f.readFileSync(m[2])).digest("hex")!==m[1])bad.push(m[2]);}
-    if(bad.length){console.error("hash mismatch: "+bad.join(","));process.exit(1);}')
+    const miss=WANT.filter(w=>!declared.includes(w)),extra=declared.filter(d=>!WANT.includes(d));
+    if(miss.length)bad.push("missing from manifest: "+miss.join(","));
+    if(extra.length)bad.push("unexpected in manifest: "+extra.join(","));
+    for(const dir of [".","bin"]){ if(!f.existsSync(dir))continue;
+      for(const n of f.readdirSync(dir)){
+      const rel=dir==="."?n:dir+"/"+n;
+      if(/\.(mjs|cjs|js)$/.test(n)&&f.statSync(rel).isFile()&&!declared.includes(rel))bad.push("undeclared script: "+rel);}}
+    if(bad.length){console.error("manifest violation: "+bad.join(" | "));process.exit(1);}')
 }
 
 say "== Agent Learning installer v$PKG_VERSION =="
